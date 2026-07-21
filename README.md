@@ -4,9 +4,10 @@ Horizon is a RaidGuild BD visibility tool. It turns Queen Raida's Discord,
 meeting, and CRM context into a public-safe web surface for active opportunities,
 project threads, and calls to action.
 
-The first artifact in this repo is the product requirements document:
+The product and implementation documents are:
 
 - [PRD.md](PRD.md)
+- [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md)
 
 ## Source Direction
 
