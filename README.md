@@ -8,6 +8,8 @@ The product and implementation documents are:
 
 - [PRD.md](PRD.md)
 - [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md)
+- [RIP.md](RIP.md)
+- [BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md)
 
 ## Source Direction
 
