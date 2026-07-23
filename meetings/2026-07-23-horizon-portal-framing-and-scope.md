@@ -18,8 +18,8 @@ as involved as an app that inherits authentication.
 
 One tension surfaced against the technical spec at the time: the meeting
 described Horizon as public-facing, while the spec scoped the first release as
-member-gated. The post-meeting decision resolves this as one product with a
-required member pilot before its sanitized public projection is enabled.
+member-gated. The final post-meeting decision makes V1 a public experiment with
+automatic confidence, evidence, and sanitizer gates.
 
 ## Existing Documents
 
@@ -68,17 +68,17 @@ Suede subsequently clarified the implementation direction:
 - Horizon will adapt the ClawRyderz Quartz pattern.
 - The primary page will be a chronological feed of threads.
 - A meaningful update moves its existing thread to the top of the feed.
-- The MVP will include one automatically generated banner per thread.
-- Per-update images are supported later but disabled during the pilot.
+- V1 will include an automatically generated landscape banner per thread.
+- Every meaningful update will receive an automatically generated square image.
 - Image generation will use Suede's ChatGPT-authenticated Codex CLI and built-in
   image generation. OpenAI API credits must not be used.
 - The official RaidGuild brand system and WebP illustrations are the visual
   source of truth.
 - Product language will not use D&D or fantasy terminology.
 
-These decisions change generated imagery from a later possibility to a scoped
-MVP feature while preserving the meeting's priority order: image failure must
-not compromise threading, privacy, or publication reliability.
+These decisions make generated imagery a complete V1 feature while preserving
+the meeting's priority order: image failure must not compromise threading,
+privacy, or publication reliability.
 
 ## CRM Integration Notes
 
@@ -133,8 +133,8 @@ not on the CRM table structure directly.
   complexity in its own canonical schema.
 - Visual generation should not distract from the harder trust problems:
   clustering, synthesis, privacy, and review.
-- The local ChatGPT/Codex image workflow needs an end-to-end smoke test before
-  it can be considered operational.
+- The local Codex CLI must be operational and signed into Suede's ChatGPT/Codex
+  account before automated imagery can run.
 
 ## Horizon Next Steps
 

@@ -20,11 +20,11 @@ where it is proven:
 - Quartz as the static site layer.
 - A scheduled local worker that commits and deploys approved changes.
 
-Horizon adds conservative opportunity clustering, BD states, separate internal
-and public approvals, a newest-activity-first feed, and automated ChatGPT
+Horizon adds conservative opportunity clustering, BD states, automatic
+public-safety gates, a newest-activity-first feed, and automated ChatGPT
 illustrations.
 
-## 2. Fixed MVP Decisions
+## 2. Fixed Implementation Choices
 
 | Area | Decision |
 | --- | --- |
@@ -32,19 +32,13 @@ illustrations.
 | Site | Quartz 4 with custom components |
 | Private state | SQLite plus immutable JSON atoms, all gitignored |
 | Published state | Generated Markdown, JSON indexes, and static images |
-| Feed order | `last_activity_at DESC, thread_id ASC` |
-| Thread detail order | Accepted updates ascending by `occurred_at` |
 | Source | Read-only Queen Raida/Prism adapter |
-| Pilot auth | Cloudflare Access or the existing HMAC-cookie gate |
-| Public output | Separate sanitized projection from approved fields only |
-| CTA | `Contact owner` |
-| Review | Lightweight operator review surface or reviewed manifest |
-| Images | One banner per thread by default |
+| Review | Exception queue for withheld items and human corrections |
 | Image execution | Local `codex exec` using saved ChatGPT/Codex authentication |
 | Image tool | Built-in `$imagegen` with RaidGuild reference images |
 | Image API | Forbidden; no `OPENAI_API_KEY` or `CODEX_API_KEY` |
-| Refresh | Nightly initially; configurable after source limits are known |
-| Deployment | Git push triggers static Quartz build |
+| Refresh | Every six hours and on demand |
+| Deployment | `main` to Cloudflare Pages at `horizon.raidguild.org` |
 
 This stack is sized for a $5,000 funded MVP. A hosted application server,
 PostgreSQL, and a full admin dashboard are not justified until usage requires
@@ -66,8 +60,7 @@ flowchart LR
     PO --> RE["Markdown and feed renderer"]
     AS --> RE
     RE --> QZ["Quartz 4 build"]
-    QZ --> IN["Member-gated deployment"]
-    QZ -. "approved public projection" .-> PU["Public deployment"]
+    QZ --> PU["horizon.raidguild.org"]
 ```
 
 Raw source bodies and prompts containing them stop before the rendering
@@ -109,7 +102,7 @@ agent/
   scripts/
     seed_fixtures.py
     evaluate.py
-    run_image_smoke_test.py
+    verify_image_runner.py
     orchestrate.py
 fixtures/
   queen-raida/                  # synthetic only
@@ -125,6 +118,7 @@ vault/
     threads/
       <thread-id>/
         banner-<version>.webp
+        update-<update-id>.webp
     brand-fallbacks/
 site/
   quartz.config.ts
@@ -280,7 +274,7 @@ a tombstone. Only the latest valid revision participates in synthesis.
   "$schema": "horizon.thread.v1",
   "id": "019...",
   "slug": "protocol-monitoring-support",
-  "state": "approved_internal",
+  "state": "approved_public",
   "created_at": "2026-07-01T12:00:00Z",
   "last_activity_at": "2026-07-23T17:10:00Z",
   "current_version_id": "019...",
@@ -323,8 +317,8 @@ not changed by render time, image generation time, or deployment time.
     "stage": 0.94
   },
   "evidence_claim_ids": ["019..."],
-  "review_state": "approved_internal",
-  "visibility": "internal",
+  "review_state": "approved_public",
+  "visibility": "public",
   "prompt_version": "synthesize.v1",
   "model": "configured-codex-model",
   "created_at": "2026-07-23T17:20:00Z"
@@ -349,7 +343,7 @@ or one update.
   "changed_fields": ["stage", "next_action"],
   "evidence_claim_ids": ["019..."],
   "image_asset_id": null,
-  "review_state": "approved_internal"
+  "review_state": "approved_public"
 }
 ```
 
@@ -377,6 +371,9 @@ current version and the latest accepted update timestamp.
 Raw evidence text is never rendered.
 
 ### 7.6 Image Job And Asset
+
+`kind` is `thread_banner` or `update_image`. Banners target `1440x550`; update
+images target `1440x1440`. Update jobs also store `thread_update_id`.
 
 ```json
 {
@@ -414,7 +411,7 @@ Raw evidence text is never rendered.
   "mime_type": "image/webp",
   "sha256": "...",
   "alt_text": "Abstract line-art scene representing coordinated protocol work.",
-  "review_state": "approved_internal",
+  "review_state": "approved_public",
   "created_at": "2026-07-23T17:34:00Z"
 }
 ```
@@ -446,14 +443,12 @@ Raw evidence text is never rendered.
 ```mermaid
 stateDiagram-v2
     [*] --> Candidate
-    Candidate --> NeedsReview: confidence or policy gate
-    Candidate --> ApprovedInternal: all internal gates pass
-    NeedsReview --> ApprovedInternal: operator approves or edits
+    Candidate --> ApprovedPublic: automatic gates pass
+    Candidate --> NeedsReview: confidence or policy uncertainty
+    Candidate --> Blocked: deterministic policy block
+    NeedsReview --> ApprovedPublic: operator resolves
     NeedsReview --> Blocked: operator or policy blocks
-    ApprovedInternal --> ApprovedPublic: disclosure reviewer approves
-    ApprovedInternal --> NeedsReview: source invalidates evidence
     ApprovedPublic --> NeedsReview: material source change
-    ApprovedInternal --> Archived: closed or dormant policy
     ApprovedPublic --> Archived: closed or withdrawn
     Blocked --> NeedsReview: issue resolved
 ```
@@ -462,13 +457,13 @@ Allowed states:
 
 - `candidate`
 - `needs_review`
-- `approved_internal`
 - `approved_public`
 - `blocked`
 - `archived`
 
-Public approval is a separate action and is never inferred from internal
-approval.
+`approved_public` is automatic only when clustering confidence is at least
+`0.92`, synthesis confidence is at least `0.85`, every material claim has
+evidence, and the sanitizer returns no unresolved finding.
 
 ### 8.2 Image State
 
@@ -567,6 +562,8 @@ Rules:
   material change.
 - A stage change always creates an update.
 - A new update is immutable after approval; corrections create a replacement.
+- A thread becomes `dormant` after 30 days without meaningful activity.
+- Dormant threads leave the main feed after 90 days but remain searchable.
 
 ## 11. Classification And Synthesis
 
@@ -585,8 +582,9 @@ Classification produces:
 Synthesis rules:
 
 - Use accepted memberships only.
-- Prefer explicit CRM state over inferred conversation state.
-- Prefer human override over any source or model result.
+- Resolve conflicts in this order: human correction, explicit CRM field,
+  meeting summary, meeting transcript, Discord thread, isolated Discord
+  message.
 - Use `unknown` rather than inventing names, dates, or outcomes.
 - Never describe funding, partnership, approval, or delivery as confirmed
   without direct evidence.
@@ -600,18 +598,19 @@ Deterministic secret and personal-data detection runs before model-assisted
 classification. A model may escalate a result but may not downgrade a
 deterministic block.
 
-| Content | Internal projection | Public projection |
-| --- | --- | --- |
-| Approved general opportunity status | Allow | Allow |
-| Approved guild owner name | Allow | Allow if public profile is approved |
-| Private Discord source link | Role-gated | Redact |
-| Raw Discord or transcript excerpt | Block | Block |
-| Personal email or phone | Redact | Block |
-| Exact budget, rate, or payment term | Role-gated or redact | Block unless explicitly approved |
-| Unannounced client or prospect | Role-gated or redact | Block |
-| Credential, private key, or token | Block and alert | Block and alert |
-| Unsupported funding or partnership claim | Block | Block |
-| Legal, security, personnel, or allegation content | Block and review | Block |
+| Content | Public action |
+| --- | --- |
+| General opportunity status with evidence | Allow |
+| Guild owner with approved public handle | Allow |
+| Public client relationship | Allow |
+| Unannounced client or prospect | Replace with `Confidential partner` |
+| Private source link or raw excerpt | Block |
+| External individual name | Block |
+| Personal contact information | Block |
+| Budget, rate, or payment term | Block |
+| Credential, private key, or token | Block and alert |
+| Unsupported funding or partnership claim | Block |
+| Legal, security, personnel, or allegation content | Block |
 
 Fail closed:
 
@@ -619,7 +618,7 @@ Fail closed:
 - Sanitizer unavailable: do not publish changed content.
 - Unknown policy category: review.
 - Critical finding: block and alert.
-- Missing public approval: exclude from public output.
+- Missing evidence or confidence: exclude from public output.
 
 ## 13. Automated Image Workflow
 
@@ -666,9 +665,9 @@ env -u OPENAI_API_KEY -u CODEX_API_KEY \
   -i assets/brand-reference/desk-work-c.webp
 ```
 
-The exact flags and output behavior must be locked by the Milestone 0 smoke
-test. The current machine's Codex installation is not healthy, so this command
-is a contract target, not yet a verified production command.
+The implementation must verify the exact flags and output behavior when the
+image runner is built. The current machine's Codex installation is not healthy,
+so this command is a contract target rather than a verified command.
 
 Official Codex behavior relevant to the design:
 
@@ -692,7 +691,7 @@ After generation:
 7. Generate alt text from the safe visual brief.
 8. Run image policy review.
 9. Store the candidate without replacing the approved asset.
-10. Promote only after the configured internal or public approval.
+10. Publish only after file and image-policy checks pass.
 
 ### 13.5 Caching And Retry
 
@@ -700,7 +699,7 @@ After generation:
 - Maximum two automatic attempts per job.
 - Back off after account or usage-limit errors.
 - Never loop indefinitely.
-- Keep the prior approved banner on failure.
+- Keep the prior approved thread or update image on failure.
 - Use an official RaidGuild WebP fallback when no approved generated image
   exists.
 
@@ -801,17 +800,7 @@ Brand implementation:
 - Use Mazius Display, EB Garamond, and Ubuntu Mono.
 - Avoid fantasy language in all interface copy.
 
-## 16. Authentication And Publication
-
-### Member Pilot
-
-Use Cloudflare Access when RaidGuild can supply an identity policy. The existing
-ClawRyderz HMAC-cookie middleware is an acceptable short-term fallback.
-
-Authentication protects the site but does not make raw source content safe to
-publish. The member projection remains sanitized.
-
-### Public Projection
+## 16. Publication
 
 The public build:
 
@@ -821,8 +810,8 @@ The public build:
   contact routes.
 - Runs static scans for secrets, Discord URLs, email addresses, phone-like
   strings, private hostnames, and raw-source markers.
-- Requires a named disclosure approval.
 - Retains the previous approved deployment for rollback.
+- Deploys to Cloudflare Pages at `horizon.raidguild.org`.
 
 ## 17. Orchestration
 
@@ -838,10 +827,10 @@ lock
 -> synthesize affected threads
 -> apply policy
 -> create review items
--> approve eligible internal versions
+-> approve eligible public versions
 -> queue eligible images
 -> run bounded image jobs
--> render member projection
+-> render public projection
 -> run tests and leak checks
 -> build Quartz
 -> commit and push only when output changed
@@ -894,7 +883,7 @@ Alert when:
 - Thread timeline ordering.
 - Evidence coverage for material claims.
 - Disclosure and deterministic secret fixtures.
-- Internal/public projection separation.
+- Private-source/public-build separation.
 - Image-job deduplication, retry, fallback, and validation.
 - Markdown/frontmatter generation.
 - Quartz build.
@@ -902,7 +891,7 @@ Alert when:
 
 ### Golden Evaluation
 
-Sean and Dekan provide or approve a sanitized set containing:
+The agent derives a private evaluation set from the accessed data containing:
 
 - Clear same-thread records.
 - Similar but distinct opportunities.
@@ -911,36 +900,34 @@ Sean and Dekan provide or approve a sanitized set containing:
 - Duplicate and irrelevant activity.
 - Sensitive and public-safe examples.
 
-Release thresholds:
+Corrections from live exception handling are added to this set. Required
+thresholds:
 
 - Auto-merge precision at least 97%.
 - Stage acceptance at least 85%.
 - Critical public sanitizer fixtures 100%.
 - Feed ordering tests 100%.
 - Zero raw-source leak fixtures.
-- One successful no-API Codex image smoke test.
+- Successful no-API thread and update image generation.
 - Valid brand fallback for every thread state.
 
 ## 20. Delivery Sequence
 
-### Milestone 0: Contracts And Smoke Tests
+### Milestone 0: Access And Foundation
 
-- Lock Queen Raida source contract.
-- Obtain sanitized fixtures.
-- Lock stage taxonomy and review roles.
+- Obtain read-only Queen Raida/Prism access and inspect the source.
 - Repair the local Codex installation.
-- Generate one image through saved ChatGPT authentication.
-- Verify exact file retrieval, optimization, and placement.
 - Pin the RaidGuild brand commit and reference pack.
 
-Exit: source fixtures and the no-API image path are proven.
+Exit: real source access and the local ChatGPT/Codex account are available.
 
 ### Milestone 1: Private Pipeline
 
 - Implement ingest, normalized atoms, state database, classification, clustering,
   synthesis, review states, and evaluation harness.
 
-Exit: fixtures produce trustworthy internal thread versions.
+Exit: fixtures produce trustworthy public candidates and correctly withheld
+exceptions.
 
 ### Milestone 2: Quartz Feed
 
@@ -955,26 +942,17 @@ Exit: meaningful updates reorder correctly on mobile and desktop.
 - Implement visual briefs, queue, Codex invocation, validation, caching, review,
   and fallback behavior.
 
-Exit: a scheduled fixture run creates and places a valid banner without an API
-key.
+Exit: scheduled runs create and place valid banners and update images without
+an API key.
 
-### Milestone 4: Member Pilot
+### Milestone 4: Public Operation
 
-- Add access control, operator review workflow, scheduled deployment, metrics,
-  and notifications.
+- Add exception handling, six-hour scheduling, metrics, notifications,
+  Cloudflare deployment, and rollback.
 
-Exit: Sean approves usefulness and correction burden is declining.
-
-### Milestone 5: Public Gate
-
-- Generate the public projection.
-- Complete disclosure review, artifact scan, manual review, and rollback test.
-
-Exit: the named disclosure reviewer and Sean approve public release.
+Exit: `horizon.raidguild.org` updates automatically from real source data.
 
 ## 21. Implementation Inputs
 
-The authoritative owner-assigned list is
-[BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md). Implementation may begin
-with synthetic fixtures, but production ingest, automated imagery, and public
-deployment remain disabled until their listed blockers are resolved.
+The access request needed to run this design against real data is in
+[BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md).

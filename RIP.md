@@ -13,8 +13,8 @@ thread will show its current stage, owner, next action, timeline, and a
 RaidGuild-style illustration.
 
 The site will adapt Suede's ClawRyderz pipeline: private source records,
-scheduled synthesis, generated Markdown, and a Quartz website. A member-gated
-pilot will establish trust before a sanitized public feed is enabled.
+scheduled synthesis, generated Markdown, and a public Quartz website. Confidence
+and sanitizer gates will automatically withhold uncertain or sensitive content.
 
 ## Why should we build this?
 
@@ -26,21 +26,21 @@ Horizon creates a shared decision surface. It will help members see what is
 moving, who owns it, what changed, and where they can help without reading every
 conversation. Better visibility should reduce context scavenging, revive stale
 opportunities, improve follow-through, and make RaidGuild's active capabilities
-more legible to trusted referrers and, after review, the public.
+more legible to members, referrers, and the public.
 
 The highest risks are incorrect thread merges and accidental disclosure.
 Horizon will prefer separate threads over uncertain merges, require evidence
-for material claims, preserve human corrections, and publish only approved
-projections. Images will be generated automatically through Suede's
+for material claims, preserve human corrections, and automatically withhold
+anything that fails its public-safety gates. Images will be generated through Suede's
 ChatGPT-authenticated Codex account, without API credits, using sanitized
 visual briefs and official RaidGuild brand references.
 
 ## Anything else you'd like to add?
 
 The funded MVP uses Quartz rather than a custom application server. It includes
-a chronological feed, durable thread pages, one automated banner per thread,
-member access control, and the public-safety release gate. CRM writeback and
-generated video are outside scope.
+a chronological feed, durable thread pages, an automated banner per thread,
+automated images on meaningful updates, search, filters, the Quartz graph, and
+six-hour public refreshes. CRM writeback and generated video are outside scope.
 
 ## Raid Party Skills Needed
 

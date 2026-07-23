@@ -38,18 +38,18 @@ These decisions replace conflicting direction in earlier drafts.
 | Feed order | `last_activity_at` descending |
 | Update behavior | A meaningful accepted update moves its thread to the top |
 | Thread history | Evidence-backed updates retained on a permanent thread page |
-| Pilot audience | RaidGuild members behind authentication |
-| Public outcome | Sanitized static projection after a separate release gate |
+| Audience | Public experiment |
+| Publication | Automatic after confidence, evidence, and sanitizer gates pass |
 | Primary CTA | `Contact owner` |
-| MVP imagery | One generated banner per thread; regenerate on material change |
-| Later imagery | Optional image on individual thread updates |
+| Thread imagery | Generated `1440x550` landscape banner |
+| Update imagery | Generated `1440x1440` image for each meaningful update |
 | Image provider | ChatGPT via the locally authenticated Codex CLI and `$imagegen` |
 | API billing | Prohibited for the image workflow |
 | Source access | Read-only Queen Raida/Prism adapter |
 | CRM writeback | Out of scope |
 
-The funded outcome is a public-safe Horizon feed. The member-gated pilot is a
-required trust gate, not a different product.
+The funded outcome and V1 are the same product: a public-safe Horizon feed.
+Items that do not clear the automatic gates are withheld.
 
 ## 4. Users
 
@@ -65,8 +65,8 @@ actions.
 
 ### Referrers And Prospective Contributors
 
-After public launch, need a sanitized view of active themes and an approved way
-to route relevant help or introductions.
+Need a sanitized view of active themes and a clear way to route relevant help
+or introductions.
 
 ### Maintainers
 
@@ -117,23 +117,24 @@ Each thread opens to a durable Quartz page containing:
 - Approved participants or organizations.
 - Open questions.
 - Related threads.
-- Evidence labels and authorized source links in the member view.
+- Public-safe evidence labels. Raw evidence and private source links remain
+  private.
 
 Thread updates display oldest-to-newest on the detail page so the narrative is
 causal. The feed itself remains newest-activity-first.
 
 ### 5.3 Review And Operations
 
-The MVP does not need a large custom admin application. A focused operator
-review surface or reviewed manifest must support:
+The MVP does not need a large custom admin application. An exception queue or
+reviewed manifest must support:
 
 - Approve, edit, reject, merge, and split.
 - Set owner, stage, visibility, and archive state.
-- Approve internal and public projections separately.
 - Approve, reject, or regenerate an image.
 - Preserve all human overrides across future runs.
 
-The operations view shows source freshness, run status, pending reviews,
+Clean high-confidence content publishes automatically. The operations view
+shows source freshness, run status, withheld items,
 sanitizer blocks, image failures, and last successful deployment.
 
 ## 6. Product Shape
@@ -146,16 +147,16 @@ Queen Raida / Prism / CRM
   -> classify
   -> conservatively cluster
   -> synthesize thread + updates
-  -> sanitize and review
+  -> sanitize and gate
   -> generate or reuse illustration
   -> render Markdown + static assets
   -> build Quartz
-  -> deploy member or public projection
+  -> deploy public projection
 ```
 
 Quartz provides Markdown pages, search, tags, graph capability, and static
 deployment. Horizon adds a custom `HorizonFeed` component and thread schema.
-The graph is secondary and can be enabled after thread quality is trusted.
+The graph ships in V1 as a secondary view.
 
 ## 7. Data And Threading
 
@@ -204,7 +205,7 @@ time. Feed order uses the accepted source activity time.
 
 ### 8.1 MVP Behavior
 
-The first approved version of a thread queues one banner illustration. A new
+The first publishable version of a thread queues one landscape banner. A new
 banner is queued only when:
 
 - The thread changes stage.
@@ -214,9 +215,8 @@ banner is queued only when:
 Routine comments do not generate images. The prior approved image remains live
 while a replacement is queued or fails.
 
-The schema supports images attached to individual updates, but automatic
-per-update generation is disabled for the pilot. Sean may enable it after Suede
-confirms style continuity and acceptable ChatGPT usage.
+Every meaningful update also queues a square timeline image. Banner and update
+jobs use the same safety, validation, caching, and fallback controls.
 
 ### 8.2 Generation Method
 
@@ -287,26 +287,19 @@ These filenames are internal production references, not interface copy.
 Raw Discord messages, transcripts, CRM notes, private URLs, and source-bearing
 prompts stay outside the published repository and Quartz build context.
 
-Every synthesized version has separate review states:
+Every synthesized version has one publication state:
 
 - `candidate`
 - `needs_review`
-- `approved_internal`
 - `approved_public`
 - `blocked`
 - `archived`
 
-Internal approval never implies public approval. Public output includes only
-`approved_public` fields and assets. Missing approval means exclusion.
-
-The first public release requires:
-
-- Sean's content approval.
-- A named disclosure reviewer.
-- A reviewed client-name and contributor-name policy.
-- A static artifact leak scan.
-- Manual review of every initial public thread.
-- One-command rollback to the prior approved deployment.
+Candidates become `approved_public` automatically when clustering confidence is
+at least `0.92`, synthesis confidence is at least `0.85`, every material claim
+has evidence, and the sanitizer is clear. Uncertain or sensitive items are
+withheld. Human review handles exceptions and corrections rather than gating
+the release.
 
 ## 11. Non-Goals
 
@@ -326,11 +319,11 @@ Horizon succeeds when it changes behavior:
 | Metric | MVP target |
 | --- | --- |
 | Time to useful awareness | Median under 3 minutes |
-| BD context scavenging | 30% reduction during pilot |
+| BD context scavenging | 30% reduction after four weeks |
 | Auto-merge precision | At least 97% on reviewed evaluation set |
 | Stage accuracy | At least 85% accepted without correction |
 | Public sanitizer recall | 100% on critical test fixtures |
-| Horizon-assisted advances | Track weekly; target 5 during pilot |
+| Horizon-assisted advances | Track weekly; target 5 in the first month |
 | Feed freshness | Published within one scheduled cycle of accepted source update |
 | Image job reliability | 90% ready without operator intervention; fallback always works |
 
@@ -343,55 +336,18 @@ Horizon succeeds when it changes behavior:
 5. Non-meaningful activity does not reorder the feed.
 6. Quartz renders the chronological feed and durable thread pages.
 7. Filters and search work on mobile and desktop.
-8. Review decisions and human overrides survive regeneration.
-9. Internal and public approvals are technically separate.
-10. A local ChatGPT-authenticated Codex run generates, validates, and places one
-    thread banner without an API key.
+8. Exception decisions and human overrides survive regeneration.
+9. Public publication requires confidence, evidence, and sanitizer gates.
+10. A local ChatGPT-authenticated Codex run generates, validates, and places
+    thread and update images without an API key.
 11. Image failure leaves the previous approved image or brand fallback in place.
-12. The scheduled job renders, builds, commits, pushes, and deploys an approved
+12. The six-hour job renders, builds, commits, pushes, and deploys an approved
     snapshot without source-data leakage.
-13. The member pilot passes the trust gate before public publishing is enabled.
+13. Search, filters, tags, and the Quartz graph ship with the public V1.
 
-## 14. Delivery Plan
+## 14. Delivery
 
-### Milestone 0: Inputs And Proofs
-
-- Confirm source contract with Dekan.
-- Obtain sanitized fixtures.
-- Confirm BD taxonomy and review owner with Sean.
-- Repair and smoke-test Suede's local Codex CLI image workflow.
-- Approve the initial RaidGuild image reference pack.
-
-### Milestone 1: Ingest And Threading
-
-- Fork/adapt the ClawRyderz worker and Quartz shell.
-- Implement Queen Raida adapter, private atoms, cursor state, classification,
-  conservative clustering, and evaluation fixtures.
-
-### Milestone 2: Synthesis And Review
-
-- Implement thread versions, meaningful-update detection, evidence claims,
-  sanitizer policy, review states, and durable overrides.
-
-### Milestone 3: Feed And Images
-
-- Build `HorizonFeed`, thread pages, filters, branding, banner generation,
-  fallback behavior, and asset validation.
-
-### Milestone 4: Member Pilot
-
-- Deploy the gated Quartz site.
-- Tune clustering, summaries, policy, and image prompts with Sean and Suede.
-- Measure time-to-awareness and correction burden.
-
-### Milestone 5: Public Gate
-
-- Approve public projections.
-- Run leak tests and manual review.
-- Enable the sanitized public deployment and rollback procedure.
-
-## 15. Open Inputs
-
-All remaining questions, blockers, owners, and requested inputs are maintained
-in [BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md). That file is the
-single source of truth for unresolved decisions.
+Architecture, implementation milestones, verification, and operations are
+defined once in [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md). The sole external
+real-data dependency is documented in
+[BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md).
