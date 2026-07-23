@@ -12,15 +12,20 @@ static deployment.
 
 ## Documents
 
-- [PRD.md](PRD.md): product behavior, scope, safety policy, brand, and success.
-- [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md): architecture, schemas, pipeline,
-  components, testing, and delivery.
-- [proposal.md](proposal.md): funded scope, team lanes, hours, and budget.
-- [RIP.md](RIP.md): succinct RaidGuild funding request.
-- [BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md): the only external
-  access request blocking real-data development.
-- [BRAND-ASSETS.md](BRAND-ASSETS.md): copied RaidGuild brand manifest.
-- [meetings/](meetings/): project meeting records.
+- [PRD.md](https://github.com/sedim3nt/horizon/blob/main/documents/PRD.md):
+  product behavior, scope, safety policy, brand, and success.
+- [TECHNICAL_SPEC.md](https://github.com/sedim3nt/horizon/blob/main/documents/TECHNICAL_SPEC.md):
+  architecture, schemas, pipeline, components, testing, and delivery.
+- [proposal.md](https://github.com/sedim3nt/horizon/blob/main/documents/proposal.md):
+  funded scope, team lanes, hours, and budget.
+- [RIP.md](https://github.com/sedim3nt/horizon/blob/main/documents/RIP.md):
+  succinct RaidGuild funding request.
+- [BLOCKERS_AND_QUESTIONS.md](https://github.com/sedim3nt/horizon/blob/main/documents/BLOCKERS_AND_QUESTIONS.md):
+  the only external access request blocking real-data development.
+- [BRAND-ASSETS.md](https://github.com/sedim3nt/horizon/blob/main/documents/BRAND-ASSETS.md):
+  copied RaidGuild brand manifest.
+- [meetings/](https://github.com/sedim3nt/horizon/tree/main/documents/meetings):
+  project meeting records.
 
 Product decisions are final. Sean owns BD feedback, Dekan owns Queen
 Raida/Prism access, and Suede owns design, brand, automation, and deployment.

@@ -348,6 +348,7 @@ Horizon succeeds when it changes behavior:
 ## 14. Delivery
 
 Architecture, implementation milestones, verification, and operations are
-defined once in [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md). The sole external
-real-data dependency is documented in
-[BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md).
+defined once in
+[TECHNICAL_SPEC.md](https://github.com/sedim3nt/horizon/blob/main/documents/TECHNICAL_SPEC.md).
+The sole external real-data dependency is documented in
+[BLOCKERS_AND_QUESTIONS.md](https://github.com/sedim3nt/horizon/blob/main/documents/BLOCKERS_AND_QUESTIONS.md).

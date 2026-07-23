@@ -12,8 +12,10 @@ threads. Each thread will show its stage, owner, next action, history, and
 automatically generated RaidGuild-style imagery.
 
 Horizon will adapt the existing ClawRyderz pipeline, Quartz, and RaidGuild
-design system. The product scope is in [PRD.md](PRD.md), and the implementation
-design is in [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md).
+design system. The product scope is in
+[PRD.md](https://github.com/sedim3nt/horizon/blob/main/documents/PRD.md), and the
+implementation design is in
+[TECHNICAL_SPEC.md](https://github.com/sedim3nt/horizon/blob/main/documents/TECHNICAL_SPEC.md).
 
 ## Deliverables
 
@@ -22,7 +24,7 @@ design is in [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md).
 - Automatic public-safety filtering.
 - Chronological Quartz feed, thread pages, search, filters, tags, and graph.
 - RaidGuild design-system implementation using
-  [BRAND-ASSETS.md](BRAND-ASSETS.md).
+  [BRAND-ASSETS.md](https://github.com/sedim3nt/horizon/blob/main/documents/BRAND-ASSETS.md).
 - Automated thread and update images through Suede's ChatGPT-authenticated
   Codex account, without API credits.
 - Six-hour generation, validation, deployment, monitoring, and rollback.
@@ -162,7 +164,8 @@ Four weeks at approximately 15 hours per lane per week:
 
 ## Completion
 
-The project is complete when the V1 acceptance criteria in [PRD.md](PRD.md)
-pass, Horizon is deployed at `horizon.raidguild.org`, the six-hour automation is
+The project is complete when the V1 acceptance criteria in
+[PRD.md](https://github.com/sedim3nt/horizon/blob/main/documents/PRD.md) pass,
+Horizon is deployed at `horizon.raidguild.org`, the six-hour automation is
 operating, the technical lead accepts the integration, and Sean accepts the
 populated feed as useful for RaidGuild BD.

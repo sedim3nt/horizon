@@ -2,7 +2,7 @@
 
 ### Project Submitted By
 
-Suede, Sean, and Sam or Dekan
+Suede and Sean
 
 ## Summary
 
@@ -27,13 +27,13 @@ engineering reliability.
 ## Anything else you'd like to add?
 
 The detailed scope, team lanes, hours, assumptions, and cost calculation are in
-[proposal.md](proposal.md).
+[proposal.md](https://github.com/sedim3nt/horizon/blob/main/documents/proposal.md).
 
 ## Raid Party Skills Needed
 
-- Design
-- Content
-- Full Stack Dev
+- Product Design And AI Build Lead
+- BD Product And Agent Operations Lead
+- Technical Architecture And Integrations Lead
 
 ## Cost (in USD)
 

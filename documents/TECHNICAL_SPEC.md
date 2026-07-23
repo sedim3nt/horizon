@@ -2,7 +2,8 @@
 
 Status: Build candidate
 
-Companion: [PRD.md](PRD.md)
+Companion:
+[PRD.md](https://github.com/sedim3nt/horizon/blob/main/documents/PRD.md)
 
 ## 1. Purpose
 
@@ -40,7 +41,7 @@ illustrations.
 | Refresh | Every six hours and on demand |
 | Deployment | `main` to Cloudflare Pages at `horizon.raidguild.org` |
 
-This stack is sized for a $5,000 funded MVP. A hosted application server,
+This stack is sized for the $10,800 funded V1. A hosted application server,
 PostgreSQL, and a full admin dashboard are not justified until usage requires
 them.
 
@@ -955,4 +956,4 @@ Exit: `horizon.raidguild.org` updates automatically from real source data.
 ## 21. Implementation Inputs
 
 The access request needed to run this design against real data is in
-[BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md).
+[BLOCKERS_AND_QUESTIONS.md](https://github.com/sedim3nt/horizon/blob/main/documents/BLOCKERS_AND_QUESTIONS.md).
