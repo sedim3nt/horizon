@@ -5,7 +5,10 @@
 node_modules/
 dist/
 build/
+!prototype/build/
+!prototype/build/sites-vite-plugin.ts
 .next/
+.wrangler/
 .cache/
 coverage/
 *.log

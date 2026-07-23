@@ -9,6 +9,7 @@ including exploratory outputs that are not used by the interface.
 - `treasury-operations-scroll100.png`
 - `climate-intelligence-scroll100.png`
 - `community-coordination-scroll100.png`
+- `social-preview-scroll100.png`
 
 These images use selected references from the official
 [RaidGuild `scroll100` illustration collection](https://github.com/raid-guild/brand/tree/main/public/assets/webp/scroll100).
