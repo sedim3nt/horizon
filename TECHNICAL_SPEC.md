@@ -1,1124 +1,980 @@
 # Horizon Technical Specification
 
-Status: Draft for implementation
+Status: Build candidate
 
-Product: Horizon
-
-Audience: RaidGuild product, BD, engineering, and security operators
-
-Companion document: [PRD.md](PRD.md)
-
-Where this specification and the PRD differ on release sequencing or technical
-implementation, this specification controls v1. The PRD remains the product
-vision, including the eventual public surface.
+Companion: [PRD.md](PRD.md)
 
 ## 1. Purpose
 
-This document turns the Horizon PRD into a build-ready system design. It defines
-the v1 architecture, data contracts, clustering behavior, review workflow,
-security boundary, application components, APIs, test strategy, and delivery
-sequence.
+This specification defines a build-ready Horizon MVP: a Quartz 4 site with a
+custom chronological feed, generated from private Queen Raida/Prism data by a
+scheduled local agent.
 
-Horizon v1 is a private, member-gated BD operating surface. It ingests source
-records from Queen Raida/Prism, conservatively groups them into opportunity
-threads, synthesizes source-backed status, and presents the result to authorized
-RaidGuild members. A sanitized public projection is a v2 capability and is not
-part of the v1 release gate.
+The design intentionally follows the
+[ClawRyderz template](https://github.com/sedim3nt/telegram-knowledge-graph)
+where it is proven:
 
-The primary technical risk is trust collapse caused by incorrect thread merges,
-unsupported synthesis, or accidental disclosure. The system therefore prefers
-under-clustering over over-merging, keeps unresolved records separate, requires
-evidence for every material claim, and makes human corrections durable.
+- Immutable private source atoms.
+- Regenerable classification and synthesis.
+- Markdown as the publishing projection.
+- Quartz as the static site layer.
+- A scheduled local worker that commits and deploys approved changes.
 
-## 2. V1 Decisions
+Horizon adds conservative opportunity clustering, BD states, separate internal
+and public approvals, a newest-activity-first feed, and automated ChatGPT
+illustrations.
 
-These choices are fixed for the first implementation unless discovery reveals a
-hard constraint.
+## 2. Fixed MVP Decisions
 
-| Area | V1 decision |
+| Area | Decision |
 | --- | --- |
-| Audience | RaidGuild members and approved operators only |
-| Authentication | Discord OAuth with RaidGuild server membership and role checks |
-| Primary CTA | `Contact owner` |
+| Runtime | Python 3.12 worker; Node.js LTS for Quartz |
+| Site | Quartz 4 with custom components |
+| Private state | SQLite plus immutable JSON atoms, all gitignored |
+| Published state | Generated Markdown, JSON indexes, and static images |
+| Feed order | `last_activity_at DESC, thread_id ASC` |
+| Thread detail order | Accepted updates ascending by `occurred_at` |
 | Source | Read-only Queen Raida/Prism adapter |
-| Application | Next.js App Router with server-enforced authorization |
-| Worker | TypeScript command-line worker running scheduled pipeline jobs |
-| Private store | PostgreSQL |
-| Contracts | Zod schemas shared by worker and web application |
-| Data access | Drizzle ORM and explicit SQL migrations |
-| Model access | Provider adapter with structured outputs and prompt versioning |
-| Refresh cadence | Four times per day, configurable |
-| Public output | Disabled in v1; approved public snapshot export added in v2 |
-| Corrections | Human merge, split, stage, owner, and visibility overrides persist |
+| Pilot auth | Cloudflare Access or the existing HMAC-cookie gate |
+| Public output | Separate sanitized projection from approved fields only |
+| CTA | `Contact owner` |
+| Review | Lightweight operator review surface or reviewed manifest |
+| Images | One banner per thread by default |
+| Image execution | Local `codex exec` using saved ChatGPT/Codex authentication |
+| Image tool | Built-in `$imagegen` with RaidGuild reference images |
+| Image API | Forbidden; no `OPENAI_API_KEY` or `CODEX_API_KEY` |
+| Refresh | Nightly initially; configurable after source limits are known |
+| Deployment | Git push triggers static Quartz build |
 
-Exact package versions must be locked when the repository is scaffolded. Use the
-current Node.js LTS release and the repository lockfile in development, CI, and
-production.
+This stack is sized for a $5,000 funded MVP. A hosted application server,
+PostgreSQL, and a full admin dashboard are not justified until usage requires
+them.
 
-## 3. Scope
-
-### 3.1 Included in v1
-
-- Read-only seed and incremental ingest from Queen Raida/Prism.
-- Private normalized storage for source records.
-- BD relevance, entity, stage, action, and sensitivity classification.
-- Conservative opportunity-thread clustering.
-- Thread synthesis with evidence and independent confidence scores.
-- Member-gated overview, board, thread detail, review queue, and ops health.
-- Manual merge, split, stage, owner, archive, and disclosure corrections.
-- One member action: contact the assigned thread owner.
-- Scheduled refresh, audit events, and pipeline telemetry.
-- Fixture-based local development when Queen Raida is unavailable.
-
-### 3.2 Deferred to v2
-
-- Anonymous public access.
-- Static `public/data/horizon.json` publication.
-- Public CTA forms and lead capture.
-- CRM writeback.
-- Automated member matching.
-- Graph visualization or Quartz archive.
-- Generated images or video.
-
-## 4. System Context
+## 3. System Context
 
 ```mermaid
 flowchart LR
-    QR["Queen Raida / Prism"] -->|"read-only cursor API"| IW["Ingest worker"]
-    IW --> DB[("Private PostgreSQL")]
-    DB --> PL["Classification and clustering pipeline"]
-    PL --> DB
-    DB --> RQ["Operator review queue"]
-    RQ --> DB
-    DB --> API["Authorized server API"]
-    API --> WEB["Member-gated Horizon web app"]
-    DB -. "v2 approved projection only" .-> PUB["Static public snapshot"]
+    QR["Queen Raida / Prism"] --> AD["Read-only adapter"]
+    CRM["Nexus CRM, if separate"] --> AD
+    AD --> AT["Private atoms + SQLite"]
+    AT --> CL["Classify and cluster"]
+    CL --> SY["Synthesize thread versions"]
+    SY --> PO["Policy and review"]
+    PO --> IM["Image job queue"]
+    IM --> CX["ChatGPT-authenticated Codex CLI"]
+    CX --> AS["Validated static image"]
+    PO --> RE["Markdown and feed renderer"]
+    AS --> RE
+    RE --> QZ["Quartz 4 build"]
+    QZ --> IN["Member-gated deployment"]
+    QZ -. "approved public projection" .-> PU["Public deployment"]
 ```
 
-Raw messages, transcripts, CRM notes, model prompts containing source text, and
-private evidence never cross the authorized server boundary. The browser
-receives a member projection containing synthesized fields and approved evidence
-labels, not raw source bodies.
+Raw source bodies and prompts containing them stop before the rendering
+boundary. The image generator receives only a sanitized visual brief.
 
-## 5. Repository Layout
-
-The implementation should use a pnpm workspace with these ownership boundaries:
+## 4. Repository Layout
 
 ```text
-apps/
-  web/                       Next.js application and authorized route handlers
-  worker/                    Scheduled ingest and synthesis commands
-packages/
-  contracts/                 Zod schemas, enums, and API types
-  db/                        Drizzle schema, migrations, and repositories
-  queen-raida-adapter/       Source adapter and contract fixtures
-  pipeline/                  Classify, resolve, cluster, synthesize, sanitize
-  policy/                    Disclosure rules and sanitizer policy
-  observability/             Structured logs, metrics, and job tracing
+agent/
+  pyproject.toml
+  src/horizon/
+    config.py
+    models.py
+    ingest.py
+    classify.py
+    cluster.py
+    synthesize.py
+    policy.py
+    review.py
+    images.py
+    render.py
+    publish.py
+    orchestrator.py
+    adapters/
+      base.py
+      queen_raida.py
+      fixtures.py
+  data/                         # gitignored
+    atomic/
+    classify/
+    state.sqlite3
+    runs/
+  prompts/
+    classify/
+    compare/
+    synthesize/
+    sanitize/
+    illustrate/
+  scripts/
+    seed_fixtures.py
+    evaluate.py
+    run_image_smoke_test.py
+    orchestrate.py
 fixtures/
-  queen-raida/               Synthetic source records; no production data
-  evaluations/               Reviewed clustering and sanitizer cases
-prompts/
-  classify/                  Versioned classification prompts
-  compare/                   Versioned pairwise comparison prompts
-  synthesize/                Versioned synthesis prompts
-  sanitize/                  Versioned disclosure prompts
+  queen-raida/                  # synthetic only
+  evaluations/
+vault/
+  index.md
+  threads/
+    <thread-slug>.md
+  _meta/
+    feed.json
+    graph.json
+  assets/
+    threads/
+      <thread-id>/
+        banner-<version>.webp
+    brand-fallbacks/
+site/
+  quartz.config.ts
+  quartz.layout.ts
+  quartz/
+    components/
+      HorizonFeed.tsx
+      HorizonFilters.tsx
+      ThreadCard.tsx
+      ThreadTimeline.tsx
+      ThreadStatus.tsx
+      SyncStatus.tsx
+    styles/
+      horizon.scss
 scripts/
-  seed-fixtures.ts
-  evaluate.ts
-  export-public-snapshot.ts  Disabled until v2
+  check-public-artifact.sh
+  build-member.sh
+  build-public.sh
+meetings/
 ```
 
-## 6. Component Map
+`agent/data/`, production prompts, credentials, and raw model responses are
+never committed. The repository may contain synthetic fixtures only.
 
-| Component | Responsibility | Reads | Writes |
-| --- | --- | --- | --- |
-| Queen Raida adapter | Page through changed source records using a cursor | Queen Raida/Prism | Normalized adapter records |
-| Ingest worker | Validate, hash, deduplicate, tombstone, and persist records | Adapter records | `source_atoms`, `sync_cursors` |
-| Classifier | Extract BD relevance, entities, stage/action signals, and risk | Unclassified atoms | `atom_classifications` |
-| Entity resolver | Normalize aliases without asserting uncertain identity | Classifications, overrides | `entities`, `entity_mentions` |
-| Candidate generator | Produce plausible thread memberships with bounded search | Atoms, entities, active threads | Candidate pairs |
-| Cluster engine | Apply hard keys, vetoes, scores, thresholds, and overrides | Candidate pairs | `thread_memberships`, review items |
-| Synthesizer | Build current thread state from accepted evidence | Thread atoms and overrides | `thread_versions`, transitions |
-| Policy engine | Classify disclosure and redact or block fields | Synthesized versions | disclosure findings, review items |
-| Review service | Apply operator decisions and durable corrections | Review mutations | overrides, audit events, new job requests |
-| Snapshot builder | Produce an immutable member projection | Approved internal thread versions | `snapshots` |
-| Authorized API | Serve member-safe projections and accept operator actions | Snapshots, reviews | Review mutations |
-| Web app | Render overview, board, details, reviews, and ops | Authorized API | Operator actions |
-| Job orchestrator | Run scheduled stages idempotently and report health | Schedule/manual trigger | `pipeline_runs`, logs, metrics |
+## 5. Component Map
 
-## 7. Queen Raida Source Contract
+| Component | Responsibility | Output |
+| --- | --- | --- |
+| Source adapter | Page through changed Queen Raida/Prism records | Normalized atoms |
+| Ingest | Validate, hash, deduplicate, and persist | Atomic JSON and cursor state |
+| Classifier | Extract BD relevance, entities, stage, action, and sensitivity | Classification JSON |
+| Candidate generator | Find plausible memberships using bounded keys | Candidate pairs |
+| Cluster engine | Apply hard keys, vetoes, scores, and overrides | Thread memberships |
+| Synthesizer | Produce immutable current state and meaningful updates | Thread versions |
+| Policy engine | Allow, redact, block, or request review | Projection candidates |
+| Review service | Persist human decisions and overrides | Approved versions |
+| Image queue | Create deterministic jobs for material versions | Image job records |
+| Image runner | Invoke ChatGPT image generation through Codex CLI | Candidate image |
+| Asset validator | Verify and optimize generated files | Approved WebP |
+| Renderer | Generate thread Markdown and feed index | `vault/` projection |
+| Quartz site | Render feed, search, filters, and thread pages | Static build |
+| Publisher | Commit, push, deploy, and record run state | Live snapshot |
 
-The exact Queen Raida/Prism transport is an implementation discovery item. The
-rest of Horizon must depend on this adapter contract, not on database-specific
-tables or API response shapes.
+## 6. Source Adapter Contract
 
-```ts
-export interface QueenRaidaSourceAdapter {
-  getCapabilities(): Promise<SourceCapabilities>;
-  listRecords(input: ListRecordsInput): Promise<ListRecordsPage>;
-  getRecord(id: string): Promise<SourceRecord | null>;
-  healthcheck(): Promise<SourceHealth>;
-}
+Horizon must not depend directly on Queen Raida or CRM table names.
 
-export interface ListRecordsInput {
-  cursor?: string;
-  updatedAfter?: string;
-  limit: number;
-}
+```python
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal, Protocol
 
-export interface ListRecordsPage {
-  records: SourceRecord[];
-  nextCursor?: string;
-  hasMore: boolean;
-  watermark: string;
-}
-```
+SourceType = Literal[
+    "discord_message",
+    "discord_thread",
+    "meeting_transcript",
+    "meeting_summary",
+    "crm_note",
+    "crm_opportunity",
+    "proposal",
+    "other",
+]
 
-Required source record:
+@dataclass(frozen=True)
+class SourceRecord:
+    source: str
+    source_type: SourceType
+    source_id: str
+    source_revision: str | None
+    occurred_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+    body: str
+    author: dict | None
+    container: dict | None
+    internal_url: str | None
+    visibility_hint: str | None
+    relations: dict
+    metadata: dict
 
-```ts
-export interface SourceRecord {
-  source: "queen_raida" | "prism";
-  sourceType:
-    | "discord_message"
-    | "discord_thread"
-    | "meeting_transcript"
-    | "meeting_summary"
-    | "crm_note"
-    | "crm_opportunity"
-    | "proposal"
-    | "other";
-  sourceId: string;
-  sourceRevision?: string;
-  occurredAt: string;
-  updatedAt: string;
-  deletedAt?: string;
-  author?: SourceActor;
-  container?: SourceContainer;
-  body: string;
-  internalUrl?: string;
-  visibilityHint?: "internal" | "restricted" | "public";
-  relations: {
-    replyToId?: string;
-    discordThreadId?: string;
-    meetingId?: string;
-    crmOpportunityId?: string;
-    proposalId?: string;
-  };
-  metadata: Record<string, unknown>;
-}
+@dataclass(frozen=True)
+class SourcePage:
+    records: list[SourceRecord]
+    next_cursor: str | None
+    has_more: bool
+    watermark: datetime
+
+class SourceAdapter(Protocol):
+    def capabilities(self) -> dict: ...
+    def list_records(
+        self, *, cursor: str | None, updated_after: datetime | None, limit: int
+    ) -> SourcePage: ...
+    def healthcheck(self) -> dict: ...
 ```
 
 Adapter requirements:
 
-- Read-only credentials with the smallest available scope.
-- Stable IDs and an incremental cursor or updated-time watermark.
-- Idempotent replay of any page.
-- Tombstones for deleted or revoked records where supported.
-- Exponential backoff with jitter for transient failures.
-- Contract tests against synthetic fixtures and a staging response sample.
-- No source body content in logs, metrics, errors, or tracing attributes.
+- Read-only credentials with minimum scope.
+- Stable source IDs.
+- Incremental cursor or updated-time watermark.
+- Idempotent page replay.
+- Edit and deletion behavior documented.
+- Bounded retries with backoff.
+- No source body in logs or exception strings.
+- Contract tests against sanitized fixtures.
 
-If the source cannot provide reliable deletion events, run a weekly bounded
-reconciliation of records in the active 180-day window.
+If deletion events are unavailable, the worker performs a bounded reconciliation
+over the active source window.
 
-## 8. Core Data Model
+## 7. Canonical Schemas
 
-All IDs are UUIDv7 unless an external source ID is explicitly named. All times
-are UTC. JSON columns are validated at write boundaries with shared schemas.
+All persisted objects include `$schema`, UTC timestamps, prompt/model versions
+when AI is involved, and a content hash.
 
-### 8.1 Enums
+### 7.1 Atomic Record
 
-```ts
-export const BdStage = z.enum([
-  "new_signal",
-  "warm_intro",
-  "discovery",
-  "scoping",
-  "proposal",
-  "approved_funded",
-  "active_delivery",
-  "dormant",
-  "closed",
-]);
+Path: `agent/data/atomic/<source>-<source-id>.json`
 
-export const Momentum = z.enum([
-  "emerging",
-  "active",
-  "blocked",
-  "stale",
-  "closing",
-]);
-
-export const ThreadState = z.enum([
-  "candidate",
-  "needs_review",
-  "approved_internal",
-  "archived",
-  "rejected",
-]);
-
-export const DisclosureState = z.enum([
-  "internal_only",
-  "public_candidate",
-  "public_approved",
-  "blocked",
-]);
-
-export const ReviewKind = z.enum([
-  "cluster_merge",
-  "cluster_split",
-  "stage_change",
-  "owner_assignment",
-  "synthesis_claim",
-  "disclosure",
-]);
-
-export const ReviewStatus = z.enum([
-  "open",
-  "in_progress",
-  "resolved",
-  "dismissed",
-]);
+```json
+{
+  "$schema": "horizon.atom.v1",
+  "id": "queen_raida:discord_message:123",
+  "source": "queen_raida",
+  "source_type": "discord_message",
+  "source_id": "123",
+  "source_revision": "4",
+  "occurred_at": "2026-07-23T17:10:00Z",
+  "updated_at": "2026-07-23T17:12:00Z",
+  "deleted_at": null,
+  "author": {"id": "discord:1", "display_name": "Internal Name"},
+  "container": {"kind": "discord_channel", "id": "456"},
+  "body": "private source text",
+  "internal_url": "https://discord.com/...",
+  "visibility_hint": "internal",
+  "relations": {
+    "discord_thread_id": null,
+    "meeting_id": null,
+    "crm_opportunity_id": null,
+    "proposal_id": null
+  },
+  "metadata": {},
+  "content_hash": "sha256:..."
+}
 ```
 
-### 8.2 PostgreSQL tables
+Atoms are immutable by revision. An edit writes a new revision; deletion writes
+a tombstone. Only the latest valid revision participates in synthesis.
 
-#### `source_atoms`
+### 7.2 Thread
 
-Immutable normalized source revisions. A changed source record creates a new
-revision; it does not overwrite history.
-
-| Column | Type | Notes |
-| --- | --- | --- |
-| `id` | uuid PK | Internal atom ID |
-| `source_system` | text | `queen_raida` or `prism` |
-| `source_type` | text | Validated source kind |
-| `source_id` | text | Stable external ID |
-| `source_revision` | text nullable | External revision when available |
-| `content_hash` | text | SHA-256 of canonical source record |
-| `occurred_at` | timestamptz | Source event time |
-| `updated_at` | timestamptz | Source update time |
-| `ingested_at` | timestamptz | Horizon ingest time |
-| `deleted_at` | timestamptz nullable | Source tombstone |
-| `author_json` | jsonb nullable | Private source actor |
-| `container_json` | jsonb nullable | Private source location |
-| `body_ciphertext` | bytea | Application-encrypted raw body |
-| `relations_json` | jsonb | Stable source relations |
-| `metadata_json` | jsonb | Allowlisted metadata only |
-
-Constraints and indexes:
-
-- Unique on `(source_system, source_id, content_hash)`.
-- Index on `(source_system, updated_at)` for reconciliation.
-- Index relation IDs extracted into generated columns where query volume
-  justifies it.
-- Deleted atoms remain for audit but are excluded from active synthesis.
-
-#### `atom_classifications`
-
-One versioned classification per atom and classifier version.
-
-| Column | Type | Notes |
-| --- | --- | --- |
-| `id` | uuid PK | Classification ID |
-| `atom_id` | uuid FK | Source atom |
-| `classifier_version` | text | Prompt plus code version |
-| `model_provider` | text | Provider identifier |
-| `model_name` | text | Exact model identifier |
-| `bd_relevance` | numeric | 0 to 1 |
-| `service_lines` | text[] | Controlled taxonomy |
-| `stage_signals_json` | jsonb | Stage, confidence, evidence span |
-| `action_signals_json` | jsonb | Action, owner hint, due date hint |
-| `entities_json` | jsonb | Mention candidates, not asserted truth |
-| `risk_labels` | text[] | Sensitivity categories |
-| `confidence` | numeric | Overall extraction confidence |
-| `created_at` | timestamptz | Classification time |
-
-#### `entities` and `entity_mentions`
-
-`entities` stores canonical people, organizations, projects, proposals, and
-service lines. `entity_mentions` connects extracted text spans to an entity with
-a confidence score and resolution method. An unresolved mention remains a
-mention; it must not be forced onto a canonical entity.
-
-#### `threads`
-
-Stable opportunity identity independent of generated summaries.
-
-| Column | Type | Notes |
-| --- | --- | --- |
-| `id` | uuid PK | Stable Horizon thread ID |
-| `state` | text | `ThreadState` |
-| `canonical_key` | text nullable | Deterministic CRM/proposal key |
-| `created_at` | timestamptz | First creation |
-| `updated_at` | timestamptz | Last material update |
-| `archived_at` | timestamptz nullable | Archive time |
-| `superseded_by_id` | uuid nullable | Set after manual merge |
-
-#### `thread_memberships`
-
-| Column | Type | Notes |
-| --- | --- | --- |
-| `thread_id` | uuid FK | Thread |
-| `atom_id` | uuid FK | Source atom |
-| `method` | text | `hard_key`, `scored`, `manual`, `seed` |
-| `score` | numeric | Membership confidence |
-| `decision_json` | jsonb | Feature scores and veto results |
-| `active` | boolean | False after split/reassignment |
-| `created_at` | timestamptz | Decision time |
-| `created_by` | text | Pipeline version or operator ID |
-
-Only one active membership is allowed per atom unless the atom is explicitly
-marked `multi_thread_evidence` by an operator.
-
-#### `thread_versions`
-
-Immutable synthesized state. The latest approved version is the default member
-projection.
-
-```ts
-export const ThreadVersionSchema = z.object({
-  id: z.string().uuid(),
-  threadId: z.string().uuid(),
-  version: z.number().int().positive(),
-  title: z.string().min(1).max(120),
-  summary: z.string().min(1).max(1200),
-  whyItMatters: z.string().max(800).nullable(),
-  stage: BdStage,
-  momentum: Momentum,
-  owner: z.object({
-    entityId: z.string().uuid(),
-    displayName: z.string(),
-    contactRoute: z.string(),
-  }).nullable(),
-  organizations: z.array(z.string().uuid()),
-  serviceLines: z.array(z.string()),
-  neededCapabilities: z.array(z.string()),
-  nextAction: z.string().max(500).nullable(),
-  nextActionDueAt: z.string().datetime().nullable(),
-  openQuestions: z.array(z.string().max(300)).max(10),
-  lastActivityAt: z.string().datetime(),
-  clusteringConfidence: z.number().min(0).max(1),
-  synthesisConfidence: z.number().min(0).max(1),
-  stageConfidence: z.number().min(0).max(1),
-  disclosureState: DisclosureState,
-  evidenceIds: z.array(z.string().uuid()).min(1),
-  promptVersion: z.string(),
-  modelProvider: z.string(),
-  modelName: z.string(),
-});
+```json
+{
+  "$schema": "horizon.thread.v1",
+  "id": "019...",
+  "slug": "protocol-monitoring-support",
+  "state": "approved_internal",
+  "created_at": "2026-07-01T12:00:00Z",
+  "last_activity_at": "2026-07-23T17:10:00Z",
+  "current_version_id": "019...",
+  "membership_ids": ["019..."],
+  "manual_overrides": ["019..."]
+}
 ```
 
-#### `evidence_claims`
+`last_activity_at` is derived from the latest accepted meaningful update. It is
+not changed by render time, image generation time, or deployment time.
 
-Every material synthesized statement must resolve to one or more evidence
-claims.
+### 7.3 Thread Version
 
-```ts
-export const EvidenceClaimSchema = z.object({
-  id: z.string().uuid(),
-  threadVersionId: z.string().uuid(),
-  claimPath: z.string(),
-  claimText: z.string(),
-  atomIds: z.array(z.string().uuid()).min(1),
-  support: z.enum(["direct", "inferred", "operator_asserted"]),
-  confidence: z.number().min(0).max(1),
-  memberLabel: z.string().max(160),
-  sourceUrlAvailable: z.boolean(),
-});
+```json
+{
+  "$schema": "horizon.thread-version.v1",
+  "id": "019...",
+  "thread_id": "019...",
+  "version": 4,
+  "title": "Protocol monitoring support",
+  "summary": "Approved current-state summary.",
+  "why_it_matters": "Approved business context.",
+  "stage": "scoping",
+  "momentum": "active",
+  "owner": {
+    "display_name": "Approved owner",
+    "contact_route": "https://discord.com/users/..."
+  },
+  "organizations": [],
+  "service_lines": ["AI workflow design"],
+  "needed_capabilities": ["DevOps"],
+  "next_action": "Confirm scope owner.",
+  "next_action_due_at": null,
+  "open_questions": [],
+  "last_activity_at": "2026-07-23T17:10:00Z",
+  "meaningful_change_fields": ["stage", "next_action"],
+  "confidence": {
+    "clustering": 0.98,
+    "synthesis": 0.91,
+    "stage": 0.94
+  },
+  "evidence_claim_ids": ["019..."],
+  "review_state": "approved_internal",
+  "visibility": "internal",
+  "prompt_version": "synthesize.v1",
+  "model": "configured-codex-model",
+  "created_at": "2026-07-23T17:20:00Z"
+}
 ```
 
-The member projection may include `memberLabel` and an authorized deep link. It
-must never include raw evidence text.
+### 7.4 Thread Update
 
-#### `stage_transitions`
+Thread updates are immutable timeline entries. A thread version may create zero
+or one update.
 
-Stores proposed and accepted stage changes with `from_stage`, `to_stage`,
-`effective_at`, evidence IDs, confidence, decision source, and optional reviewer.
-Stage history is derived from accepted transitions rather than synthesized from
-scratch on every run.
-
-#### `review_items`
-
-```ts
-export const ReviewItemSchema = z.object({
-  id: z.string().uuid(),
-  kind: ReviewKind,
-  status: ReviewStatus,
-  priority: z.enum(["critical", "high", "normal", "low"]),
-  threadIds: z.array(z.string().uuid()).max(5),
-  atomIds: z.array(z.string().uuid()).max(100),
-  reasonCodes: z.array(z.string()),
-  proposedChange: z.record(z.string(), z.unknown()),
-  assignedTo: z.string().uuid().nullable(),
-  createdAt: z.string().datetime(),
-  resolvedAt: z.string().datetime().nullable(),
-  resolution: z.record(z.string(), z.unknown()).nullable(),
-});
+```json
+{
+  "$schema": "horizon.thread-update.v1",
+  "id": "019...",
+  "thread_id": "019...",
+  "thread_version_id": "019...",
+  "occurred_at": "2026-07-23T17:10:00Z",
+  "published_at": "2026-07-23T18:00:00Z",
+  "headline": "Scope moved into active review",
+  "summary": "Approved update summary.",
+  "changed_fields": ["stage", "next_action"],
+  "evidence_claim_ids": ["019..."],
+  "image_asset_id": null,
+  "review_state": "approved_internal"
+}
 ```
 
-#### `operator_overrides`
+Updates are rendered ascending on the thread page. Feed cards use only the
+current version and the latest accepted update timestamp.
 
-Durable instructions applied before automated decisions. Supported kinds:
+### 7.5 Evidence Claim
+
+```json
+{
+  "$schema": "horizon.evidence-claim.v1",
+  "id": "019...",
+  "thread_version_id": "019...",
+  "claim_path": "next_action",
+  "claim_text": "Confirm scope owner.",
+  "atom_ids": ["queen_raida:meeting_summary:789"],
+  "support": "direct",
+  "confidence": 0.94,
+  "member_label": "BD meeting summary, Jul 23",
+  "authorized_source_url": "https://...",
+  "public_label": null
+}
+```
+
+Raw evidence text is never rendered.
+
+### 7.6 Image Job And Asset
+
+```json
+{
+  "$schema": "horizon.image-job.v1",
+  "id": "019...",
+  "thread_id": "019...",
+  "thread_version_id": "019...",
+  "kind": "thread_banner",
+  "state": "ready",
+  "visual_brief_hash": "sha256:...",
+  "prompt_version": "illustrate.v1",
+  "reference_assets": [
+    {
+      "repo": "raid-guild/brand",
+      "commit": "<pinned-commit>",
+      "path": "public/assets/webp/moloch500/1440x550/ship-mech-c.webp"
+    }
+  ],
+  "requested_at": "2026-07-23T17:30:00Z",
+  "attempt_count": 1,
+  "error_code": null,
+  "asset_id": "019..."
+}
+```
+
+```json
+{
+  "$schema": "horizon.image-asset.v1",
+  "id": "019...",
+  "thread_id": "019...",
+  "thread_version_id": "019...",
+  "path": "vault/assets/threads/019/banner-4.webp",
+  "width": 1440,
+  "height": 550,
+  "mime_type": "image/webp",
+  "sha256": "...",
+  "alt_text": "Abstract line-art scene representing coordinated protocol work.",
+  "review_state": "approved_internal",
+  "created_at": "2026-07-23T17:34:00Z"
+}
+```
+
+### 7.7 Review Item
+
+```json
+{
+  "$schema": "horizon.review-item.v1",
+  "id": "019...",
+  "kind": "cluster_merge",
+  "state": "open",
+  "priority": "normal",
+  "thread_ids": ["019...", "019..."],
+  "atom_ids": ["..."],
+  "reason_codes": ["score_in_review_band"],
+  "proposed_change": {},
+  "assigned_to": null,
+  "created_at": "2026-07-23T17:25:00Z",
+  "resolved_at": null,
+  "resolution": null
+}
+```
+
+## 8. Review States
+
+### 8.1 Content State
+
+```mermaid
+stateDiagram-v2
+    [*] --> Candidate
+    Candidate --> NeedsReview: confidence or policy gate
+    Candidate --> ApprovedInternal: all internal gates pass
+    NeedsReview --> ApprovedInternal: operator approves or edits
+    NeedsReview --> Blocked: operator or policy blocks
+    ApprovedInternal --> ApprovedPublic: disclosure reviewer approves
+    ApprovedInternal --> NeedsReview: source invalidates evidence
+    ApprovedPublic --> NeedsReview: material source change
+    ApprovedInternal --> Archived: closed or dormant policy
+    ApprovedPublic --> Archived: closed or withdrawn
+    Blocked --> NeedsReview: issue resolved
+```
+
+Allowed states:
+
+- `candidate`
+- `needs_review`
+- `approved_internal`
+- `approved_public`
+- `blocked`
+- `archived`
+
+Public approval is a separate action and is never inferred from internal
+approval.
+
+### 8.2 Image State
+
+```text
+not_requested -> queued -> generating -> ready
+                         \-> failed -> queued
+ready -> rejected -> queued
+ready -> superseded
+```
+
+Only `ready` assets with the required content approval may render. A failed,
+rejected, or superseded image never removes the last approved image.
+
+### 8.3 Durable Overrides
+
+Supported overrides:
 
 - `force_merge`
 - `never_merge`
 - `force_membership`
 - `exclude_atom`
+- `set_title`
 - `set_stage`
 - `set_owner`
-- `set_title`
 - `set_visibility`
+- `set_summary`
+- `approve_public`
+- `reject_image`
 - `archive_thread`
 
-Overrides store scope, value, author, reason, creation time, and optional expiry.
-They are never silently replaced by a later model run.
+Each override records author, reason, time, scope, and optional expiry. Automated
+runs may not silently replace it.
 
-#### Operational tables
+## 9. Clustering
 
-- `sync_cursors`: source cursor, watermark, and last successful sync.
-- `pipeline_runs`: stage timing, status, counts, code version, and error class.
-- `snapshots`: immutable member projection, schema version, checksum, and time.
-- `audit_events`: append-only operator and system mutations.
-
-## 9. Clustering Specification
-
-Clustering is the highest-risk subsystem. Its objective is not to minimize the
-number of threads. Its objective is to create identities that operators trust.
+Clustering is the highest-risk subsystem.
 
 ### 9.1 Invariants
 
-1. Prefer under-clustering over over-merging.
-2. An unresolved item remains separate until confidence clears a threshold or an
-   operator resolves it.
-3. Never auto-merge two established threads solely on semantic similarity.
-4. Explicit different CRM opportunity IDs are a hard `never_merge` veto.
-5. Manual `never_merge`, split, and membership decisions override all model
-   output.
-6. Every scored decision stores its component features and pipeline version.
-7. Clustering confidence is independent from summary and stage confidence.
-8. A low-confidence membership cannot silently affect an approved thread.
+- Prefer under-clustering over over-merging.
+- Never merge established threads solely on semantic similarity.
+- Never allow a model to override a deterministic `never_merge`.
+- Keep unresolved atoms separate.
+- Preserve evidence for every membership decision.
+- Recompute only affected candidates during incremental runs.
 
-### 9.2 Decision order
+### 9.2 Decision Order
 
-For each new relevant atom:
+1. Apply human overrides.
+2. Apply hard deterministic keys.
+3. Apply hard vetoes.
+4. Generate bounded candidate pairs.
+5. Score remaining pairs.
+6. Auto-merge only above the high threshold.
+7. Queue the review band.
+8. Keep lower-scoring records separate.
 
-1. Apply active operator overrides.
-2. Match deterministic keys.
-3. Generate a bounded candidate set.
-4. Apply hard contradiction vetoes.
-5. Score remaining candidates.
-6. Auto-attach, request review, or create a separate candidate thread.
-7. Synthesize only from accepted memberships.
+Recommended initial thresholds:
 
-### 9.3 Deterministic keys
+| Decision | Score |
+| --- | --- |
+| Auto-merge | `>= 0.92` |
+| Operator review | `0.72-0.9199` |
+| Keep separate | `< 0.72` |
 
-Auto-attach with score `1.0` when a source record shares one of these stable
-keys with exactly one active thread:
+Hard keys include identical CRM opportunity ID, proposal ID, or Discord thread
+ID. Hard vetoes include conflicting explicit opportunity IDs, incompatible
+organizations with no bridging evidence, or an operator `never_merge`.
 
-- CRM opportunity ID.
-- Proposal or RIP ID.
-- Explicit Queen Raida thread/opportunity ID.
-- Discord thread ID, unless manually split.
+The auto-merge threshold may only be lowered after the reviewed evaluation set
+maintains at least 97% merge precision.
 
-A meeting ID or reply relationship is strong evidence but not a universal hard
-key because one meeting or channel thread may discuss multiple opportunities.
+## 10. Meaningful-Update Detection
 
-### 9.4 Candidate generation
+The synthesizer compares the new candidate version with the latest accepted
+version.
 
-Compare an atom only to active threads that share at least one blocking feature:
+Material fields:
 
-- Resolved organization.
-- Resolved external stakeholder.
-- Explicit project, proposal, or opportunity alias.
-- Discord thread or meeting container.
-- Service-line overlap plus activity within 45 days.
-- Embedding similarity above the retrieval floor.
-
-Return at most 20 candidate threads. Candidate retrieval must not itself cause a
-merge.
-
-### 9.5 Hard vetoes
-
-Reject automatic membership when any condition is true:
-
-- Different explicit CRM opportunity IDs.
-- Active `never_merge` override.
-- Explicitly different named client organizations with no parent/alias relation.
-- Source states that the item is unrelated to the candidate opportunity.
-- Candidate is closed and the new atom describes a distinct new engagement.
-- The only positive feature is semantic or service-line similarity.
-
-### 9.6 Scoring
-
-The scorer returns a feature breakdown, not only a model judgment.
-
-| Feature | Weight |
-| --- | ---: |
-| Same stable source relation | 0.35 |
-| Same resolved organization | 0.20 |
-| Same resolved stakeholder | 0.10 |
-| Same explicit project/proposal alias | 0.15 |
-| Semantic similarity | 0.10 |
-| Temporal proximity | 0.05 |
-| Compatible service line and stage | 0.05 |
+- `summary`
+- `stage`
+- `momentum`
+- `owner`
+- `next_action`
+- `next_action_due_at`
+- confirmed organizations
+- confirmed participants
+- `open_questions`
 
 Rules:
 
-- A hard veto forces the score to `0`.
-- Missing data contributes `0`; it is not treated as agreement.
-- Auto-attach threshold: `>= 0.88`.
-- Review band: `0.70` through `0.8799`.
-- Below `0.70`: create or retain a separate candidate thread.
-- Two established threads may auto-merge only when they gain the same unique
-  deterministic key. All other thread-to-thread merges require review.
+- Cosmetic wording changes do not create an update.
+- Evidence-only additions that do not change state do not reorder the feed.
+- A model-proposed change below its field confidence gate enters review.
+- `last_activity_at` equals the latest source time supporting the accepted
+  material change.
+- A stage change always creates an update.
+- A new update is immutable after approval; corrections create a replacement.
 
-Thresholds live in configuration and may change only after an evaluated fixture
-set shows that auto-merge precision remains above the release threshold.
+## 11. Classification And Synthesis
 
-### 9.7 Cluster review payload
+Only atoms above the configurable BD relevance threshold enter clustering.
+Classification produces:
 
-A merge review must show:
-
-- Proposed source and destination threads.
-- Matching and conflicting features.
-- Confidence and threshold.
-- Titles, organizations, owners, stages, and recent evidence labels.
-- Consequence count: memberships and thread versions affected.
-- Actions: `Confirm merge`, `Keep separate`, `Move selected items`, `Defer`.
-
-`Keep separate` creates a durable `never_merge` override. `Move selected items`
-creates explicit memberships and exclusions. A split creates a new stable thread
-and replays synthesis for both resulting threads.
-
-## 10. Classification and Synthesis
-
-### 10.1 Classification
-
-Only atoms with `bd_relevance >= 0.55` enter candidate generation. Atoms between
-`0.40` and `0.5499` remain searchable for operators but do not create or alter
-threads. Lower-scoring atoms are retained privately and excluded from Horizon
-processing.
-
-The classifier produces:
-
-- BD relevance and reason codes.
-- Entity mentions and resolution hints.
-- Service-line candidates.
-- Stage signals with supporting source spans.
-- Next-action and owner hints.
+- BD relevance and reason.
+- Entity mentions and aliases.
+- Candidate hard keys.
+- Service line.
+- Stage evidence.
+- Owner and next-action hints.
 - Sensitivity labels.
 - Extraction confidence.
 
-Source spans are stored privately for audit and are never sent to the browser.
+Synthesis rules:
 
-### 10.2 Synthesis rules
-
-- Use only active, accepted memberships.
-- Recency-weight evidence but retain older facts still explicitly in force.
-- Prefer direct CRM state over inferred conversational stage.
-- Prefer an operator override over all source and model signals.
-- Use `unknown` or `null` instead of inventing an owner, date, organization, or
-  outcome.
-- Mark inference as inference in the evidence claim.
-- Do not describe interest, intent, funding, approval, or delivery as confirmed
+- Use accepted memberships only.
+- Prefer explicit CRM state over inferred conversation state.
+- Prefer human override over any source or model result.
+- Use `unknown` rather than inventing names, dates, or outcomes.
+- Never describe funding, partnership, approval, or delivery as confirmed
   without direct evidence.
-- Do not regress an accepted stage automatically unless direct evidence supports
-  dormancy, loss, cancellation, or correction.
-- Generate a new immutable version only when a material field changes.
+- Every material field requires an evidence claim.
+- Every prompt and model version is recorded.
+- Source content is untrusted data; instructions within it are never executed.
 
-### 10.3 Confidence gates
+## 12. Disclosure Policy
 
-An internal thread version automatically becomes `approved_internal` only when:
+Deterministic secret and personal-data detection runs before model-assisted
+classification. A model may escalate a result but may not downgrade a
+deterministic block.
 
-- Clustering confidence is at least `0.88`.
-- Synthesis confidence is at least `0.80`.
-- Stage confidence is at least `0.80`, or the stage is `new_signal`.
-- At least one evidence claim supports every material field.
-- No critical or high disclosure finding is open.
-- An owner exists, or the UI clearly displays `Owner needed`.
-
-Otherwise it enters `needs_review`. Existing approved versions remain visible
-with a `Review pending` marker until a replacement is approved.
-
-## 11. Disclosure Policy and Sanitizer
-
-V1 is member-gated, but it still applies a disclosure policy because guild
-membership does not imply unrestricted access to every CRM or client detail.
-The v2 public policy is stricter and requires explicit approval.
-
-### 11.1 Policy result
-
-```ts
-export const DisclosureFindingSchema = z.object({
-  fieldPath: z.string(),
-  action: z.enum(["allow", "redact", "block", "review"]),
-  category: z.enum([
-    "secret",
-    "private_endpoint",
-    "personal_data",
-    "client_confidential",
-    "financial",
-    "legal_security",
-    "governance",
-    "unsupported_claim",
-    "raw_source",
-  ]),
-  reasonCode: z.string(),
-  replacement: z.string().nullable(),
-  confidence: z.number().min(0).max(1),
-});
-```
-
-Deterministic detection runs before model-assisted policy classification. A
-model can escalate a finding but cannot downgrade a deterministic `block`.
-
-### 11.2 Policy examples
-
-| Input or claim | Member v1 | Public v2 | Reason |
-| --- | --- | --- | --- |
-| `A protocol team is exploring monitoring support` with approved attribution | Allow | Allow | General opportunity state |
-| `Discovery call completed; scope is being clarified` | Allow | Allow after client-name approval | Source-backed stage summary |
-| `Contact the assigned Horizon owner` | Allow | Allow through approved route | Single supported CTA |
-| Named contributor with an approved guild profile | Allow | Allow | Approved professional identity |
-| Private Discord channel URL | Allow only for authorized role | Redact | Internal endpoint |
-| Personal email or phone number | Redact in shared view | Redact | Personal data |
-| Exact budget, rate, runway, or payment terms | Restricted role or redact | Block unless explicitly approved | Financial confidentiality |
-| Unannounced prospect or client name | Restricted role or redact | Block pending approval | Client confidentiality |
-| Raw Discord quote or transcript excerpt | Block | Block | Raw source disclosure |
-| API key, token, password, seed phrase, private key | Block and alert | Block and alert | Secret |
-| Legal dispute, security incident, allegation, or personnel issue | Block and require review | Block | High-risk sensitive content |
-| `The deal is funded` based only on optimistic chat | Block as unsupported | Block as unsupported | Unsupported material claim |
-| Internal governance strategy or vote coordination | Restricted and review | Block pending governance approval | Governance sensitivity |
-
-### 11.3 Fail-closed behavior
-
-- Schema validation failure: do not publish the new version.
-- Sanitizer unavailable: do not approve or snapshot changed threads.
-- Critical finding: hide the affected version and alert operators.
-- Unknown policy category: route to review.
-- Public v2 export: include only `public_approved` versions; absence of approval
-  means exclusion.
-
-## 12. Review Workflow
-
-Review state belongs to a proposed decision, not to the entire source corpus.
-This keeps operator work focused and allows approved thread versions to remain
-useful while a later change is under review.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Open
-    Open --> InProgress: operator claims
-    Open --> Resolved: operator decides
-    Open --> Dismissed: obsolete or duplicate
-    InProgress --> Open: unassign
-    InProgress --> Resolved: approve, edit, reject, split, or merge
-    InProgress --> Dismissed: obsolete or duplicate
-    Resolved --> Open: source change invalidates decision
-    Dismissed --> [*]
-    Resolved --> [*]
-```
-
-### 12.1 Automatic review creation
-
-Create a review item when:
-
-- Membership is in the clustering review band.
-- A merge between established threads is proposed.
-- Stage changes by two or more steps without a deterministic CRM signal.
-- An approved thread loses its owner.
-- A material claim has confidence below `0.80`.
-- Any sanitizer result is `review` or `block`.
-- A source deletion invalidates accepted evidence.
-- A thread has conflicting direct stage or funding signals.
-
-### 12.2 Roles
-
-| Role | Permissions |
-| --- | --- |
-| Member | Read approved internal threads; contact owner |
-| BD operator | Member permissions; review clusters, stages, owners, and summaries |
-| Disclosure reviewer | Approve public candidates and resolve sensitive findings |
-| Maintainer | Manage jobs, adapters, taxonomies, and operator access |
-| Admin | Manage roles and emergency access; all actions audited |
-
-One person may hold multiple roles. Public approval in v2 must be performed by a
-disclosure reviewer and cannot be inferred from internal approval.
-
-### 12.3 Review decisions
-
-Every decision records operator ID, timestamp, reason, before/after payload,
-source evidence IDs, and resulting override IDs. Editing generated text creates
-an `operator_asserted` evidence claim and a durable field override; it does not
-rewrite model history.
-
-## 13. Member Projection and API
-
-### 13.1 Member thread payload
-
-```ts
-export const MemberThreadSchema = z.object({
-  id: z.string().uuid(),
-  version: z.number().int(),
-  title: z.string(),
-  summary: z.string(),
-  whyItMatters: z.string().nullable(),
-  stage: BdStage,
-  momentum: Momentum,
-  freshness: z.enum(["today", "this_week", "this_month", "stale"]),
-  lastActivityAt: z.string().datetime(),
-  owner: z.object({
-    displayName: z.string(),
-    contactRoute: z.string(),
-  }).nullable(),
-  organizations: z.array(z.string()),
-  serviceLines: z.array(z.string()),
-  neededCapabilities: z.array(z.string()),
-  nextAction: z.string().nullable(),
-  nextActionDueAt: z.string().datetime().nullable(),
-  openQuestions: z.array(z.string()),
-  confidence: z.object({
-    clustering: z.number(),
-    synthesis: z.number(),
-    stage: z.number(),
-  }),
-  evidence: z.array(z.object({
-    id: z.string().uuid(),
-    label: z.string(),
-    occurredAt: z.string().datetime(),
-    authorizedSourceUrl: z.string().nullable(),
-  })),
-  reviewPending: z.boolean(),
-});
-```
-
-### 13.2 Server routes
-
-All v1 routes require an authenticated session. Mutation routes also require a
-role and CSRF protection.
-
-| Method | Route | Purpose |
+| Content | Internal projection | Public projection |
 | --- | --- | --- |
-| `GET` | `/api/v1/overview` | Counts, recent changes, stale and action-needed threads |
-| `GET` | `/api/v1/threads` | Filtered, sorted, cursor-paginated thread list |
-| `GET` | `/api/v1/threads/:id` | Thread detail and stage history |
-| `GET` | `/api/v1/reviews` | Operator review queue |
-| `POST` | `/api/v1/reviews/:id/claim` | Claim a review item |
-| `POST` | `/api/v1/reviews/:id/resolve` | Apply a review decision |
-| `GET` | `/api/v1/ops` | Pipeline and source health |
-| `POST` | `/api/v1/jobs/sync` | Maintainer-triggered idempotent sync |
+| Approved general opportunity status | Allow | Allow |
+| Approved guild owner name | Allow | Allow if public profile is approved |
+| Private Discord source link | Role-gated | Redact |
+| Raw Discord or transcript excerpt | Block | Block |
+| Personal email or phone | Redact | Block |
+| Exact budget, rate, or payment term | Role-gated or redact | Block unless explicitly approved |
+| Unannounced client or prospect | Role-gated or redact | Block |
+| Credential, private key, or token | Block and alert | Block and alert |
+| Unsupported funding or partnership claim | Block | Block |
+| Legal, security, personnel, or allegation content | Block and review | Block |
 
-The contact action is rendered from the approved owner's `contactRoute`. It is
-not an open-ended form in v1. Valid routes are allowlisted Discord deep links or
-RaidGuild-controlled email aliases. Personal contact details do not appear in
-the projection.
+Fail closed:
 
-### 13.3 Sorting
+- Schema failure: retain the last approved version.
+- Sanitizer unavailable: do not publish changed content.
+- Unknown policy category: review.
+- Critical finding: block and alert.
+- Missing public approval: exclude from public output.
 
-Default board order is deterministic:
+## 13. Automated Image Workflow
 
-1. Explicit action due or overdue.
-2. Stage advanced in the last seven days.
-3. Activity recency.
-4. Momentum: active, emerging, blocked, stale, closing.
-5. Stable thread ID as final tie-breaker.
+### 13.1 Preconditions
 
-Confidence is shown as a trust signal but is not used to promote a questionable
-thread above a confirmed one.
+The image runner executes only when:
 
-## 14. Web Application Component Map
+- The content version is sanitized.
+- The visual brief contains no raw source text.
+- The job has a new deterministic brief hash.
+- A local Codex CLI installation is healthy.
+- The active CLI profile is authenticated through ChatGPT/Codex, not an API key.
+- The pinned brand reference assets are available.
+
+### 13.2 Visual Brief
+
+The brief contains only:
+
+- Public-safe subject category.
+- Abstract action or relationship.
+- Stage and momentum expressed visually.
+- Approved service line.
+- Composition and aspect ratio.
+- RaidGuild palette and style constraints.
+- Prohibited elements.
+
+It excludes names, messages, URLs, budgets, credentials, and unpublished
+organizations.
+
+### 13.3 Invocation
+
+The implementation uses a prompt file or safely constructed argument; it never
+interpolates raw source text into a shell command.
+
+Illustrative invocation:
+
+```bash
+env -u OPENAI_API_KEY -u CODEX_API_KEY \
+  codex exec --sandbox workspace-write \
+  '$imagegen Generate the approved Horizon thread banner from the visual brief
+  and attached RaidGuild references. Place the final file at the exact requested
+  workspace path. Do not use an API key or call the Image API.' \
+  -i assets/brand-reference/ship-mech-c.webp \
+  -i assets/brand-reference/desk-work-c.webp
+```
+
+The exact flags and output behavior must be locked by the Milestone 0 smoke
+test. The current machine's Codex installation is not healthy, so this command
+is a contract target, not yet a verified production command.
+
+Official Codex behavior relevant to the design:
+
+- `codex exec` supports non-interactive scheduled work and reuses saved CLI
+  authentication.
+- `$imagegen` explicitly invokes built-in image generation.
+- Built-in image generation consumes general Codex usage limits.
+- Programmatic high-volume generation would normally use the Image API, but
+  Horizon explicitly prohibits that path.
+
+### 13.4 Asset Validation
+
+After generation:
+
+1. Resolve the tool output to an explicit workspace file.
+2. Verify MIME type by file bytes.
+3. Require minimum dimensions and expected aspect-ratio tolerance.
+4. Reject zero-byte, corrupt, or unexpectedly large files.
+5. Convert to WebP with metadata stripped.
+6. Compute SHA-256.
+7. Generate alt text from the safe visual brief.
+8. Run image policy review.
+9. Store the candidate without replacing the approved asset.
+10. Promote only after the configured internal or public approval.
+
+### 13.5 Caching And Retry
+
+- Deduplicate by `thread_version_id + kind + visual_brief_hash + prompt_version`.
+- Maximum two automatic attempts per job.
+- Back off after account or usage-limit errors.
+- Never loop indefinitely.
+- Keep the prior approved banner on failure.
+- Use an official RaidGuild WebP fallback when no approved generated image
+  exists.
+
+## 14. Rendering Contract
+
+### 14.1 Feed Index
+
+`vault/_meta/feed.json` contains approved projection data:
+
+```json
+{
+  "$schema": "horizon.feed.v1",
+  "generated_at": "2026-07-23T18:00:00Z",
+  "projection": "internal",
+  "threads": [
+    {
+      "id": "019...",
+      "slug": "protocol-monitoring-support",
+      "title": "Protocol monitoring support",
+      "summary": "Approved summary.",
+      "stage": "scoping",
+      "momentum": "active",
+      "owner": "Approved owner",
+      "next_action": "Confirm scope owner.",
+      "last_activity_at": "2026-07-23T17:10:00Z",
+      "banner": "/assets/threads/019/banner-4.webp",
+      "tags": ["scoping", "ai-workflow-design"]
+    }
+  ]
+}
+```
+
+The renderer sorts before writing. `HorizonFeed` sorts again defensively using:
 
 ```text
-AppShell
-|-- AuthBoundary
-|-- PrimaryNav
-|-- SyncHealthIndicator
-`-- RouteContent
-    |-- OverviewPage
-    |   |-- MetricStrip
-    |   |-- NeedsActionList
-    |   `-- RecentChanges
-    |-- ThreadBoardPage
-    |   |-- ThreadFilters
-    |   |-- ThreadSort
-    |   `-- ThreadTable / ThreadCardList
-    |-- ThreadDetailPage
-    |   |-- ThreadHeader
-    |   |-- StatusSummary
-    |   |-- StageTimeline
-    |   |-- EvidenceList
-    |   |-- OpenQuestions
-    |   `-- ContactOwnerAction
-    |-- ReviewQueuePage (operator)
-    |   |-- ReviewFilters
-    |   |-- ClusterComparison
-    |   |-- DisclosureFindings
-    |   `-- DecisionBar
-    `-- OpsPage (maintainer)
-        |-- PipelineRunTable
-        |-- SourceCoverage
-        |-- FailureSummary
-        `-- ModelAndPromptVersions
+last_activity_at DESC
+thread_id ASC
 ```
 
-The first screen is the operating surface, not a marketing landing page.
-Desktop should favor a dense table/list suitable for scanning. Mobile may use a
-card list. Components must handle loading, empty, stale, partial failure,
-low-confidence, review-pending, and unauthorized states.
+Publication timestamps, image timestamps, and filenames must not affect order.
 
-## 15. Authentication and Authorization
+### 14.2 Thread Markdown
 
-1. Authenticate with Discord OAuth.
-2. On sign-in and periodically thereafter, verify membership in the configured
-   RaidGuild Discord server.
-3. Map allowlisted Discord roles to Horizon roles.
-4. Store only the minimum Discord identity and authorization metadata required.
-5. Revoke sessions when guild membership or required roles are lost.
-6. Enforce authorization in server code and database queries; hidden controls in
-   the UI are not an authorization boundary.
+Each `vault/threads/<slug>.md` contains frontmatter for search, tags, graph, feed
+metadata, and the current approved image. The body contains current state and
+the accepted timeline.
 
-Authentication configuration and secrets remain server-side. The application
-must have a documented emergency method to disable all access without changing
-source data.
+Only sanitized fields are written. Internal and public builds use different
+generated directories or clean build stages so one projection cannot leak into
+the other.
 
-## 16. Pipeline Execution
-
-Each scheduled run uses a unique `run_id` and executes idempotent stages:
+## 15. Quartz Component Map
 
 ```text
-healthcheck source
-  -> ingest changed records
-  -> classify new revisions
-  -> resolve entity mentions
-  -> apply overrides
-  -> generate cluster candidates
-  -> decide memberships / create reviews
-  -> synthesize changed accepted threads
-  -> evaluate disclosure policy
-  -> approve eligible internal versions
-  -> build member snapshot
-  -> record metrics and alert on failure
+QuartzPage
+|-- BrandHeader
+|-- Search
+|-- HorizonFilters
+|   |-- StageFilter
+|   |-- MomentumFilter
+|   |-- ServiceLineFilter
+|   `-- NeedsActionToggle
+|-- HorizonFeed
+|   `-- ThreadCard[]
+|       |-- ThreadBanner
+|       |-- ThreadStatus
+|       |-- CurrentSummary
+|       |-- NextAction
+|       `-- ContactOwnerLink
+|-- ThreadPage
+|   |-- ThreadHeader
+|   |-- ThreadBanner
+|   |-- CurrentState
+|   |-- ThreadTimeline
+|   |-- RelatedThreads
+|   `-- EvidenceLabels
+`-- SyncStatus
 ```
 
-Job rules:
+Layout rules:
 
-- Only one ingest run per source may hold the advisory lock.
-- A failed stage may be retried without duplicating records or reviews.
-- Snapshot activation is atomic: members see the previous complete snapshot or
-  the next complete snapshot, never a partial result.
-- A critical sanitizer or schema failure prevents activation but does not remove
-  the previous healthy snapshot.
-- Reprocessing can be scoped by atom, thread, source window, prompt version, or
-  full corpus.
+- The feed is the first screen.
+- Desktop uses a readable single-column editorial feed with metadata aligned for
+  scanning; it is not a dense dashboard grid.
+- Mobile keeps the same order and avoids hidden essential state.
+- Banner images preserve aspect ratio and use a stable `1440:550` frame.
+- Cards use no more than 8px radius.
+- Search and filters are compact and sticky when practical.
+- Quartz explorer and graph may appear on detail pages, not ahead of the feed.
+- Loading is not required for static content; empty, stale, redacted, missing
+  image, and no-owner states are required.
 
-## 17. Observability
+Brand implementation:
 
-### 17.1 Required metrics
+- Copy or pin the required brand tokens and fonts from `raid-guild/brand`.
+- Use semantic brand colors rather than duplicating arbitrary hex values.
+- Use the official logo rules.
+- Use Mazius Display, EB Garamond, and Ubuntu Mono.
+- Avoid fantasy language in all interface copy.
 
-- Source records fetched, created, changed, tombstoned, and rejected.
-- Classification success, schema failure, latency, and cost.
-- Candidate pairs generated and vetoed.
-- Auto-attaches, review-band decisions, separate-thread decisions, manual merges,
-  and manual splits.
-- Synthesis success, no-op versions, and review-gated versions.
-- Disclosure findings by action and category.
-- Snapshot age and active thread count.
-- Review queue age by kind and priority.
-- End-to-end job duration and last successful completion.
+## 16. Authentication And Publication
 
-### 17.2 Alerts
+### Member Pilot
 
-Alert maintainers when:
+Use Cloudflare Access when RaidGuild can supply an identity policy. The existing
+ClawRyderz HMAC-cookie middleware is an acceptable short-term fallback.
 
-- No successful sync occurs within twice the configured interval.
-- Source count drops by more than 50% relative to the recent baseline.
-- Schema failures exceed 2% of a run.
-- Any critical disclosure finding is generated.
-- Snapshot activation fails twice consecutively.
-- Auto-merge precision in reviewed samples falls below target.
+Authentication protects the site but does not make raw source content safe to
+publish. The member projection remains sanitized.
 
-Logs use structured event names, IDs, counts, durations, and error classes. They
-must not contain source bodies, generated private summaries, contact details, or
-credentials.
+### Public Projection
 
-## 18. Security and Privacy Controls
+The public build:
 
-- Treat all source text as untrusted content, never as instructions.
-- Delimit source content in prompts and explicitly forbid tool use or instruction
-  following from that content.
-- Validate every model response against a strict schema and size limits.
-- Encrypt raw source bodies at the application layer and storage layer.
-- Use separate source, application, migration, and read-only operations roles.
-- Keep production data out of fixtures, CI artifacts, analytics, and error tools.
-- Redact source bodies before any model request logging.
-- Restrict evidence deep links according to source role permissions.
-- Record all review decisions and privileged access changes in append-only audit
-  events.
-- Back up encrypted private data and test restore procedures.
-- Define retention by source class during Milestone 0; deletion must propagate to
-  future snapshots and invalidate unsupported claims.
+- Starts from an empty output directory.
+- Reads only `approved_public` versions and assets.
+- Excludes internal URLs, confidence values, review diagnostics, and personal
+  contact routes.
+- Runs static scans for secrets, Discord URLs, email addresses, phone-like
+  strings, private hostnames, and raw-source markers.
+- Requires a named disclosure approval.
+- Retains the previous approved deployment for rollback.
 
-Before any public v2 release, perform a threat model and disclosure review using
-realistic adversarial fixtures, including prompt injection, secrets, personal
-data, unsupported funding claims, and hidden client identity.
+## 17. Orchestration
 
-## 19. Testing and Evaluation
+Each run is idempotent:
 
-### 19.1 Automated tests
+```text
+lock
+-> healthcheck
+-> ingest changed records
+-> classify pending atoms
+-> generate candidates
+-> cluster
+-> synthesize affected threads
+-> apply policy
+-> create review items
+-> approve eligible internal versions
+-> queue eligible images
+-> run bounded image jobs
+-> render member projection
+-> run tests and leak checks
+-> build Quartz
+-> commit and push only when output changed
+-> deploy
+-> record metrics
+-> notify operator
+-> unlock
+```
 
-| Layer | Required coverage |
-| --- | --- |
-| Contracts | Valid/invalid adapter, model, database, API, and snapshot payloads |
-| Adapter | Pagination, cursor resume, duplicate replay, deletion, rate limit, malformed records |
-| Pipeline units | Feature weights, vetoes, thresholds, overrides, stage transitions, redaction |
-| Database | Constraints, idempotency, immutable versions, transactional snapshot activation |
-| Integration | Fixture ingest through member projection without external services |
-| Authorization | Every route and field against member/operator/maintainer roles |
-| E2E | Sign-in, filter, detail, contact owner, review merge/split, stale-data state |
-| Security | Prompt injection fixtures, secret detection, raw-body leakage checks |
+Image failure is a partial failure: it uses the last approved image or fallback
+and does not block a valid text update. Policy or leak-check failure blocks
+publication.
 
-### 19.2 Golden evaluation set
+Only one orchestrator may run per environment. Interrupted stages resume from
+persisted state.
 
-Before pilot launch, BD operators must label at least:
+## 18. Observability
 
-- 100 source atoms for BD relevance and stage signals.
-- 75 atom-to-thread membership decisions.
-- 25 deliberately confusing near-duplicate opportunity pairs.
-- 25 thread summaries for factual support and usefulness.
-- 50 disclosure examples across allow, redact, review, and block.
+Record counts and durations without source bodies:
 
-The evaluation set contains synthetic or appropriately controlled data and is
-versioned separately from production raw records.
+- Source records read, created, changed, and tombstoned.
+- Atoms classified.
+- Candidate pairs and decision bands.
+- Threads created, updated, and unchanged.
+- Reviews opened and resolved.
+- Sanitizer findings by category.
+- Image jobs queued, ready, failed, rejected, and fallback-used.
+- Feed age and last source activity.
+- Build, commit, push, and deployment status.
 
-### 19.3 V1 release thresholds
+Alert when:
 
-- Auto-merge precision: at least 97%.
-- Incorrect merge rate: no more than 2% in the reviewed sample.
-- Stage acceptance without edit: at least 85%.
-- Material summary claim support: 100% of sampled claims have evidence.
-- Secret detection recall: 100% on the security fixture set.
-- Block/redact recall: at least 98% on labeled high-risk fixtures.
-- No raw source body present in browser responses, logs, or build artifacts.
-- Median authorized page load under 2.5 seconds on the target deployment.
+- Ingest has not succeeded for two scheduled cycles.
+- Public leak scan fails.
+- A critical secret finding occurs.
+- Auto-merge precision evaluation regresses.
+- Image failures exceed 50% over five jobs.
+- Deployment is older than the latest approved update.
 
-Recall for thread grouping is intentionally secondary to merge precision in v1.
-Operators can combine separate threads; recovering trust after a false merge is
-more expensive.
+## 19. Testing
 
-## 20. Success Measurement
+### Automated
 
-Horizon succeeds when it changes operator behavior, not merely when it produces
-plausible threads.
+- Source adapter contract and pagination.
+- Idempotent ingest and tombstones.
+- Classification schema validation.
+- Clustering hard keys, vetoes, thresholds, and overrides.
+- Meaningful-update detection.
+- Feed sorting, including identical timestamps.
+- Thread timeline ordering.
+- Evidence coverage for material claims.
+- Disclosure and deterministic secret fixtures.
+- Internal/public projection separation.
+- Image-job deduplication, retry, fallback, and validation.
+- Markdown/frontmatter generation.
+- Quartz build.
+- Static artifact leak scan.
 
-Establish a two-week baseline before the pilot, then measure for four weeks:
+### Golden Evaluation
 
-| Metric | Definition | V1 target |
-| --- | --- | --- |
-| Time to useful awareness | Median time for a member to identify active work, owner, and next action | Under 3 minutes |
-| Context scavenging | Self-reported weekly time BD operators spend searching Discord/meetings for current state | 30% reduction |
-| Horizon-assisted advances | Opportunities that moved stage or gained a concrete next action after being surfaced in Horizon | Track weekly; 5+ during pilot |
-| Owner contact completion | Eligible `Contact owner` actions that lead to an acknowledged conversation | Establish baseline, then improve |
-| Weekly active operators | Authorized BD operators who use Horizon in a week | At least 70% of pilot group |
-| Correction burden | Manual cluster corrections per 20 active threads | Declining over four pilot weeks |
+Sean and Dekan provide or approve a sanitized set containing:
 
-An operator marks an opportunity `Horizon-assisted` with a reason code; the
-system does not infer causation from a page view or click.
+- Clear same-thread records.
+- Similar but distinct opportunities.
+- Stage changes.
+- Contradictory CRM and meeting signals.
+- Duplicate and irrelevant activity.
+- Sensitive and public-safe examples.
 
-## 21. Delivery Plan
+Release thresholds:
 
-### Milestone 0: Contract and policy discovery
+- Auto-merge precision at least 97%.
+- Stage acceptance at least 85%.
+- Critical public sanitizer fixtures 100%.
+- Feed ordering tests 100%.
+- Zero raw-source leak fixtures.
+- One successful no-API Codex image smoke test.
+- Valid brand fallback for every thread state.
 
-- Confirm Queen Raida/Prism transport, fields, permissions, cursor, and deletion
-  behavior.
-- Obtain a sanitized staging sample and implement adapter contract tests.
-- Confirm Discord guild and role mapping.
-- Name the BD review owner and disclosure reviewer.
-- Approve retention, visibility, and incident handling policy.
-- Capture baseline operator behavior metrics.
+## 20. Delivery Sequence
 
-Exit: source contract, access model, policy owner, and synthetic fixtures are
-approved.
+### Milestone 0: Contracts And Smoke Tests
 
-### Milestone 1: Foundation and ingest
+- Lock Queen Raida source contract.
+- Obtain sanitized fixtures.
+- Lock stage taxonomy and review roles.
+- Repair the local Codex installation.
+- Generate one image through saved ChatGPT authentication.
+- Verify exact file retrieval, optimization, and placement.
+- Pin the RaidGuild brand commit and reference pack.
 
-- Scaffold workspace, contracts, database, migrations, worker, and web app.
-- Implement source adapter, encryption, cursors, idempotency, and tombstones.
-- Add pipeline run tracking and fixture seed command.
+Exit: source fixtures and the no-API image path are proven.
 
-Exit: a seed and incremental fixture ingest produce private normalized atoms
-without leaking source text.
+### Milestone 1: Private Pipeline
 
-### Milestone 2: Classification and conservative clustering
+- Implement ingest, normalized atoms, state database, classification, clustering,
+  synthesis, review states, and evaluation harness.
 
-- Implement structured classification and entity mentions.
-- Implement hard keys, candidate blocking, vetoes, scoring, and thresholds.
-- Implement durable overrides and merge/split operations.
-- Build the first golden clustering evaluation.
+Exit: fixtures produce trustworthy internal thread versions.
 
-Exit: auto-merge precision reaches 97% on the reviewed fixture set.
+### Milestone 2: Quartz Feed
 
-### Milestone 3: Synthesis, policy, and review
+- Adapt Quartz.
+- Build the chronological feed and thread pages.
+- Apply official brand tokens, fonts, logo, and fallback images.
 
-- Implement immutable thread versions and evidence claims.
-- Implement stage transitions and confidence gates.
-- Implement sanitizer rules, disclosure findings, and review queue.
-- Add operator review screens for merge, split, stage, owner, and content.
+Exit: meaningful updates reorder correctly on mobile and desktop.
 
-Exit: every material claim has evidence and all high-risk fixtures fail closed.
+### Milestone 3: Image Automation
 
-### Milestone 4: Member pilot
+- Implement visual briefs, queue, Codex invocation, validation, caching, review,
+  and fallback behavior.
 
-- Implement Discord authentication, role mapping, overview, board, detail, and
-  contact-owner action.
-- Add ops health, scheduled jobs, alerts, and atomic member snapshots.
-- Pilot with a small BD operator group using real controlled data.
+Exit: a scheduled fixture run creates and places a valid banner without an API
+key.
 
-Exit: security checks pass, pilot operators approve output quality, and behavior
-metrics are being captured.
+### Milestone 4: Member Pilot
 
-### Milestone 5: V1 release
+- Add access control, operator review workflow, scheduled deployment, metrics,
+  and notifications.
 
-- Resolve pilot trust issues and tune thresholds against reviewed evidence.
-- Document operations, incident response, restore, and access revocation.
-- Expand access to authorized RaidGuild members.
+Exit: Sean approves usefulness and correction burden is declining.
 
-Exit: all v1 release thresholds pass for two consecutive refresh cycles and the
-named product owner signs off.
+### Milestone 5: Public Gate
 
-## 22. Public V2 Gate
+- Generate the public projection.
+- Complete disclosure review, artifact scan, manual review, and rollback test.
 
-Public publishing must not be enabled merely because the member pilot works. It
-requires all of the following:
+Exit: the named disclosure reviewer and Sean approve public release.
 
-- Separate `public_approved` disclosure state and reviewer role.
-- Explicit policy for client names, contributor identities, funding, and
-  governance claims.
-- Public projection schema containing no internal URLs or confidence/debug data.
-- Static artifact leak test in CI.
-- Manual review of the first complete public snapshot.
-- Rollback that restores the previous approved snapshot immediately.
-- Incident owner and takedown procedure.
+## 21. Implementation Inputs
 
-Only then may the worker produce `public/data/horizon.json` from approved public
-fields. Raw atoms and the member projection must remain outside the public build
-context.
-
-## 23. Open Implementation Inputs
-
-These inputs must be answered during Milestone 0; they do not block repository
-scaffolding or fixture-based development:
-
-1. Queen Raida/Prism API or database access contract.
-2. Available deletion, visibility, relation, and CRM opportunity fields.
-3. Discord guild ID and role-to-Horizon-role mapping.
-4. Approved owner contact routes and fallback when no owner exists.
-5. Named BD review owner and disclosure reviewer.
-6. Retention periods by source type.
-7. Hosting environment and managed PostgreSQL provider.
-8. Model provider constraints, data-processing terms, and budget.
-
-Until these are resolved, implementations must use synthetic fixtures, disabled
-production connectors, and `internal_only` disclosure defaults.
+The authoritative owner-assigned list is
+[BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md). Implementation may begin
+with synthetic fixtures, but production ingest, automated imagery, and public
+deployment remain disabled until their listed blockers are resolved.

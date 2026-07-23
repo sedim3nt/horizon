@@ -1,118 +1,179 @@
 # Horizon Blockers, Questions, And Needed Inputs
 
-This document lists the key dependencies that need to be resolved with the
-Queen Raida/Prism developer and RaidGuild before Horizon can move from planning
-to implementation.
+This is the single source of truth for unresolved Horizon inputs. Each item
+names the person who must answer or provide it.
+
+## Current Defaults
+
+These choices are adopted unless the named owner changes them:
+
+- Quartz 4 with a custom chronological feed.
+- Threads sort by latest accepted meaningful activity.
+- Thread timelines display oldest-to-newest.
+- Member-gated pilot before public release.
+- `Contact owner` as the only MVP CTA.
+- One generated banner per thread; regenerate on material stage or subject
+  change.
+- Per-update images supported but disabled during the pilot.
+- Image generation through Suede's ChatGPT-authenticated Codex CLI only.
+- No OpenAI API keys, API calls, or API credits for images.
+- Read-only Queen Raida/Prism and CRM access.
 
 ## Hard Blockers
 
-- Queen Raida/Prism source access: Horizon needs read-only access to the system
-  where Discord, meeting, transcript, and CRM records are stored.
-- Source contract confirmation: the team needs to confirm whether Horizon will
-  connect through an API, database replica, export job, or another Prism
-  interface.
-- Stable source identifiers: Horizon needs stable IDs for messages,
-  transcripts, CRM notes, meetings, proposals, and opportunity records so it can
-  deduplicate and update records safely.
-- Incremental sync support: Horizon needs a cursor, updated-at watermark, event
-  stream, or equivalent mechanism so it can refresh without reprocessing the
-  entire history every run.
-- Authorization model: RaidGuild needs to confirm how v1 member gating should
-  work, including Discord OAuth, server membership checks, and any role-based
-  operator permissions.
-- Privacy policy owner: RaidGuild needs one accountable person or small group
-  to approve disclosure rules for internal summaries and any future public
-  projection.
-- Synthetic or staging data: implementation needs representative non-sensitive
-  fixtures or staging samples before connecting to production data.
+### Ask Dekan: Queen Raida Source Contract
 
-## Needed From The Queen Raida / Prism Developer
+Needed before production ingest:
 
-- API or database documentation for the records Horizon should ingest.
-- Authentication method, credential process, and minimum read-only scope.
-- List of available source types, such as Discord messages, Discord threads,
-  meeting transcripts, meeting summaries, CRM notes, CRM opportunities, and RIP
-  or proposal records.
-- Field definitions for each source type, including IDs, timestamps, author
-  metadata, channel/container metadata, source URLs, body text, and relationship
-  fields.
-- Explanation of how deleted, edited, revoked, or private records are
-  represented.
-- Confirmation of whether source records include visibility hints, privacy tags,
-  CRM stages, owners, opportunity IDs, or proposal IDs.
-- Expected data volume, historical backfill size, and normal daily update
-  volume.
-- Rate limits, query limits, pagination behavior, and retry expectations.
-- A staging endpoint, fixture export, or anonymized sample payload.
-- Guidance on whether Horizon may store normalized copies of source records in
-  its private database.
-- Contact path for debugging adapter failures during development.
+- Confirm whether Horizon reads through Prism API, Queen Raida API, a database
+  replica, or a scheduled export.
+- Provide read-only access and authentication instructions.
+- Provide sanitized example payloads for each available source type.
+- Confirm stable IDs, update timestamps, pagination, rate limits, and deletion
+  behavior.
+- Identify relationship fields for Discord threads, meetings, CRM
+  opportunities, proposals, people, and organizations.
+- Confirm whether Horizon may keep normalized private copies locally.
+- Confirm which system wins when Queen Raida, Prism, and Nexus CRM disagree.
 
-## Needed From RaidGuild
+Owner: Dekan
 
-- Confirmation that v1 should be internal/member-gated and not public by
-  default.
-- The Discord guild ID and role IDs that should grant member access.
-- The role or user list that should grant operator/reviewer access.
-- Initial BD stage taxonomy approval. Proposed stages: intake, warm intro,
-  discovery, scoping, proposal, RIP/funding, staffing, active raid, blocked,
-  dormant, complete, lost.
-- Default CTA approval. Proposed MVP CTA: contact owner.
-- Definition of who can be assigned as a thread owner and how ownership should
-  be inferred or corrected.
-- Initial list of BD operators who can review clustering, summaries, owners,
-  stage changes, and disclosure flags.
-- Sanitizer policy examples for what is allowed, redacted, blocked, or sent to
-  review.
-- List of highly sensitive terms, clients, partners, wallets, channels, or
-  project names that should be blocked or always reviewed.
-- Hosting preference: `raidguild.org/horizon`, `horizon.raidguild.org`, or a
-  RaidGuild AI property.
-- Preferred deploy target and infrastructure owner.
-- Visual direction for the member dashboard using RaidGuild's current AI and
-  web tone without fantasy framing.
-- Success criteria for the funded build.
+Blocks: Production adapter, backfill, incremental sync, and source precedence.
 
-## Open Product Questions
+### Ask Sean: Content And Disclosure Authority
 
-- Which source should be treated as canonical when Discord discussion,
-  transcript notes, and CRM status disagree?
-- Should Horizon show only active BD opportunities, or also internal project
-  delivery threads that started as BD opportunities?
-- How far back should the first historical import go?
-- How should stale threads be handled: hidden, marked stale, or surfaced as
-  needs follow-up?
-- Should members see evidence snippets, source links, or only synthesized
-  summaries in v1?
-- Should thread owner contact route to Discord DM, a profile link, email, or an
-  internal request action?
-- What is the minimum review workflow needed before members trust the output?
-- Who has final say when the AI stage classification disagrees with a BD
-  operator?
+Needed before the member pilot and public release:
 
-## Open Technical Questions
+- Approve the BD stages and what qualifies as an active Horizon thread.
+- Name the primary BD reviewer and backup reviewer.
+- Name the person authorized to approve public disclosure.
+- Provide examples of content that is allowed internally, allowed publicly,
+  redacted, or blocked.
+- Define the policy for client names, contributor names, budgets, funding
+  claims, and governance context.
+- Approve the owner-contact route and fallback when no owner exists.
 
-- Does Queen Raida/Prism already have opportunity IDs that can be used as hard
-  clustering keys?
-- Are meeting transcripts linked to Discord channels, threads, CRM records, or
-  participants?
-- Are author identities normalized across Discord, meetings, CRM, and proposals?
-- Can Horizon receive tombstones or change events for deleted and edited source
-  records?
-- Can source URLs be stored and displayed to authorized members?
-- Are there existing environments for development, staging, and production?
-- Which model provider should Horizon use for classification, comparison,
-  synthesis, and sanitizer checks?
-- Are there existing RaidGuild secrets management, logging, and monitoring
-  conventions the implementation should follow?
+Owner: Sean
 
-## Build Inputs Needed Before Implementation Starts
+Blocks: Review policy, pilot sign-off, and public projection.
 
-- Read-only Queen Raida/Prism access path.
-- Staging or synthetic fixture data.
-- Discord auth and role requirements.
-- Approved v1 stage taxonomy.
-- Approved v1 sanitizer examples.
-- Initial reviewer/operator list.
-- Hosting and deployment decision.
-- Agreement that public output is deferred until v2.
+### Ask Suede: Repair And Prove The No-API Image Runner
+
+The local `codex` command was checked on 2026-07-23 and failed because its native
+executable was missing. Before image automation is treated as production-ready:
+
+- Repair or reinstall the Codex CLI.
+- Confirm the CLI is signed in through the intended ChatGPT/Codex account.
+- Run one non-interactive `$imagegen` smoke test with API-key environment
+  variables removed.
+- Confirm the generated file can be resolved, copied to an exact repository
+  path, converted to WebP, and validated automatically.
+- Confirm the account's usage limits are acceptable for the proposed cadence.
+- Confirm the machine that will run the schedule is reliably online.
+
+Owner: Suede
+
+Blocks: Automated generated images. Text threads can use brand fallbacks until
+this is resolved.
+
+### Ask Suede: Hosting And Repository Boundary
+
+Decide:
+
+- Final route: `raidguild.org/horizon`, `horizon.raidguild.org`,
+  `raidguild.ai/horizon`, or another approved location.
+- Cloudflare account and project owner.
+- Cloudflare Access versus the existing ClawRyderz HMAC login for the pilot.
+- Whether generated member content lives in this repo or a separate private
+  deployment repo.
+- Where local private state is backed up and who can operate the scheduled
+  runner.
+
+Owner: Suede
+
+Blocks: Production deployment and operations.
+
+## Needed From Sean
+
+- Approve or edit this proposed stage taxonomy:
+  `new_signal`, `warm_intro`, `discovery`, `scoping`, `proposal`,
+  `approved_funded`, `active_delivery`, `dormant`, `closed`.
+- Provide 10-20 representative historical opportunities for the evaluation set.
+- Label examples that must remain separate even when they sound similar.
+- Identify the initial pilot members.
+- Define `Horizon-assisted advance` for success reporting.
+- Confirm whether active delivery stays in the feed or leaves after handoff.
+- Confirm the staleness window and whether stale threads stay visible.
+- Ratify banner-only generation for the pilot. Enabling per-update images is a
+  later product decision, not an implementation blocker.
+- Approve the final public feed before launch.
+
+## Needed From Dekan
+
+- Queen Raida/Prism schema or API documentation.
+- Staging endpoint or anonymized export.
+- Historical backfill size and normal daily update volume.
+- Visibility hints and restricted-channel behavior.
+- Identity normalization across Discord, meetings, Prism, and CRM.
+- Tombstone or reconciliation strategy for edits and deletions.
+- Internal source-link rules for member evidence.
+- Contact path for adapter failures.
+- Confirmation that CRM access stays read-only for the MVP.
+
+## Needed From Suede
+
+- Approve the initial illustration reference pack from the official RaidGuild
+  WebP library.
+- Pin the RaidGuild brand repository commit used by the implementation.
+- Approve the Horizon visual prompt recipe and fallback images.
+- Supply or approve the logo, fonts, favicon, and metadata treatment.
+- Confirm that product copy uses Sean, Dekan, and Suede for people; `sedim3nt`
+  appears only where it is part of a repository or account path.
+- Confirm the local runner, schedule, backup, and deployment credentials.
+- Review mobile and desktop feed composition.
+- Approve any generated image before it becomes part of the initial public
+  snapshot.
+
+## Questions Assigned To Sean
+
+1. When CRM and meeting context conflict, should CRM stage win automatically or
+   enter review?
+2. Can a thread be public with an anonymized organization, or must the entire
+   thread remain hidden?
+3. Which fields are useful enough to justify member visibility: evidence
+   labels, internal links, confidence, and open questions?
+4. Who receives `Contact owner` when an opportunity has no named owner?
+5. What should close a thread: delivery handoff, inactivity, loss, or explicit
+   operator action?
+
+## Questions Assigned To Dekan
+
+1. Does Queen Raida already aggregate Discord, meetings, and Nexus CRM into one
+   stable thread or opportunity identifier?
+2. Are meeting records linked to channels, participants, CRM records, or
+   proposals?
+3. Can Horizon query records changed since a cursor or watermark?
+4. How are restricted records and revoked access represented?
+5. Are prompts, summaries, or source bodies already sanitized anywhere in the
+   Queen Raida pipeline, and can Horizon rely on that label?
+
+## Questions Assigned To Suede
+
+1. Which two to six WebP scenes best define Horizon's generation style?
+2. Should generated banners use the `1440x550` landscape ratio exclusively?
+3. Is manual image approval required throughout the pilot, or only for the
+   initial public snapshot?
+4. Should the scheduled local job commit directly to `main` or push a generated
+   branch for review?
+5. What is the recovery plan when the local runner is offline or ChatGPT usage
+   is temporarily limited?
+
+## Non-Blocking Later Decisions
+
+- Enable images on individual timeline updates.
+- Add a graph or signal map.
+- Increase refresh cadence beyond nightly.
+- Add Discord digests.
+- Add CRM writeback.
+- Add member matching.
+- Add generated video.
