@@ -15,9 +15,11 @@ static deployment.
 - [PRD.md](PRD.md): product behavior, scope, safety policy, brand, and success.
 - [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md): architecture, schemas, pipeline,
   components, testing, and delivery.
+- [proposal.md](proposal.md): funded scope, team lanes, hours, and budget.
+- [RIP.md](RIP.md): succinct RaidGuild funding request.
 - [BLOCKERS_AND_QUESTIONS.md](BLOCKERS_AND_QUESTIONS.md): the only external
   access request blocking real-data development.
-- [RIP.md](RIP.md): RaidGuild funding proposal.
+- [BRAND-ASSETS.md](BRAND-ASSETS.md): copied RaidGuild brand manifest.
 - [meetings/](meetings/): project meeting records.
 
 Product decisions are final. Sean owns BD feedback, Dekan owns Queen
