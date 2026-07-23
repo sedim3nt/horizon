@@ -12,6 +12,10 @@ static deployment.
 
 ## Documents
 
+- [Stakeholder prototype](https://github.com/sedim3nt/horizon/tree/main/prototype):
+  interactive fictional feed for product and funding review.
+- [Generated image gallery](https://github.com/sedim3nt/horizon/tree/main/gallery):
+  every prototype image output, including unused explorations.
 - [PRD.md](https://github.com/sedim3nt/horizon/blob/main/documents/PRD.md):
   product behavior, scope, safety policy, brand, and success.
 - [TECHNICAL_SPEC.md](https://github.com/sedim3nt/horizon/blob/main/documents/TECHNICAL_SPEC.md):
