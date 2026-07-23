@@ -26,6 +26,10 @@ engineering reliability.
 
 ## Anything else you'd like to add?
 
+Review the
+[live Horizon prototype](https://raidguild-horizon-prototype.sedim3nt.chatgpt.site),
+which uses fictional data to demonstrate the proposed experience.
+
 The detailed scope, team lanes, hours, assumptions, and cost calculation are in
 [proposal.md](https://github.com/sedim3nt/horizon/blob/main/documents/proposal.md).
 

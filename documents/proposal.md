@@ -17,6 +17,10 @@ design system. The product scope is in
 implementation design is in
 [TECHNICAL_SPEC.md](https://github.com/sedim3nt/horizon/blob/main/documents/TECHNICAL_SPEC.md).
 
+The
+[live Horizon prototype](https://raidguild-horizon-prototype.sedim3nt.chatgpt.site)
+uses fictional data to demonstrate the proposed experience.
+
 ## Deliverables
 
 - Read-only Queen Raida/Prism and CRM ingestion.
