@@ -2,7 +2,7 @@
 
 ### Project Submitted By
 
-Suede and Sean
+Suede, Sean, and Sam or Dekan
 
 ## Summary
 
@@ -18,10 +18,11 @@ and CRM records. Horizon will make active opportunities understandable without
 requiring members or prospective clients to reconstruct that context manually.
 
 The project reuses the ClawRyderz pipeline, Quartz, and RaidGuild's design system
-to keep the build focused. Suede will lead product, engineering, design quality,
-automation, and deployment. Sean will lead BD editorial standards, review the
-generated feed, and ensure the result is accurate, useful, and persuasive to
-clients.
+to keep the build focused. Suede will lead product design, Codex-directed
+implementation, and visual quality. Sean will lead BD requirements, agent
+workflows, editorial calibration, and client-facing usefulness. Sam or Dekan
+will lead API integration, architecture, infrastructure, security, and
+engineering reliability.
 
 ## Anything else you'd like to add?
 
@@ -36,4 +37,4 @@ The detailed scope, team lanes, hours, assumptions, and cost calculation are in
 
 ## Cost (in USD)
 
-$9,600
+$10,800
